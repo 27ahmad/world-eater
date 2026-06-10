@@ -113,6 +113,12 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   filter:drop-shadow(0 0 22px rgba(0,245,212,.7))}
 #stageToast .small{letter-spacing:.4em;text-transform:uppercase;color:var(--dim);font-size:.85em;margin-bottom:4px}
 @keyframes evoPop{0%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1.08)}20%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:scale(1.04) translateY(-12px)}}
+#bossToast{position:absolute;top:30%;left:0;right:0;text-align:center;pointer-events:none;opacity:0}
+#bossToast.show{animation:evoPop 2.2s ease forwards}
+#bossToast .big{font-size:2.2em;font-weight:900;letter-spacing:.2em;text-transform:uppercase;
+  background:linear-gradient(180deg,#fff,var(--danger));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 22px rgba(255,77,94,.7))}
+#bossToast .small{letter-spacing:.5em;text-transform:uppercase;color:var(--danger);font-size:.8em;margin-bottom:4px;animation:hintFade .5s ease-in-out infinite alternate}
 #toasts{position:absolute;right:12px;bottom:max(86px,calc(env(safe-area-inset-bottom) + 78px));display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .toast{background:var(--panel-solid);border:1px solid var(--line);border-left:3px solid var(--food);border-radius:12px;
   padding:10px 14px;font-size:.92em;max-width:260px;text-align:left;animation:toastIn .25s ease, toastOut .4s ease 3.6s forwards;box-shadow:0 6px 20px rgba(0,0,0,.5)}
@@ -231,6 +237,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <div id="comboBox"><div id="comboNum">x5</div><div id="comboLbl">Combo</div><div id="comboTimer"><div id="comboTimerBar"></div></div></div>
   <div id="bossWrap"><div id="bossName">MILITARY TITAN</div><div id="bossHpWrap"><div id="bossHpBar"></div></div></div>
   <div id="stageToast"><div class="small" id="stageToastScale">Evolution</div><div class="big" id="stageToastName">RAVENOUS MITE</div></div>
+  <div id="bossToast"><div class="small" id="bossToastLabel">WARNING</div><div class="big" id="bossToastName">ALPHA PHAGE</div></div>
   <div id="toasts"></div>
   <div id="hint">Drag or move mouse &middot; devour everything smaller &middot; Space / double-tap to dash</div>
 </div>
@@ -376,6 +383,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   </div>
 </div>
 
-<script src="game.js?v=4"></script>
+<script src="game.js?v=5"></script>
 </body>
 </html>

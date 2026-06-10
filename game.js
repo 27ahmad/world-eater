@@ -881,7 +881,7 @@ const G = {
   score: 0, combo: 0, comboT: 0, bestCombo: 0,
   eaten: 0, time: 0, world: WORLDS[0],
   stats: null, run: null, lastSpawn: 0, ambient: [],
-  victoryCore: null, slowmo: 1
+  victoryCore: null, slowmoT: 0, event: null, eventT: 0
 };
 
 const INPUT = { x: 0, y: 0, active: false };
@@ -994,7 +994,8 @@ function startRun() {
   G.xp = 0;
   G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
-  G.eaten = 0; G.time = 0; G.slowmo = 1; G.upCount = 0;
+  G.eaten = 0; G.time = 0; G.slowmoT = 0; G.upCount = 0;
+  G.event = null; G.eventT = rand(22, 38);
   if (P.owned["perk_start2"] && G.mode !== "rush") {
     startMutations = 1;
     G.level = 2;
@@ -1073,6 +1074,57 @@ function spawnShard(x, y, val) {
     shape: "shard", tier: G.evoIndex, ai: null, a: 0, spin: 2, wob: Math.random() * 9, hp: 0, shardVal: val, life: 9 });
 }
 
+/* ---------------- world events ---------------- */
+function startWorldEvent() {
+  const type = G.mode === "zen" ? "golden" : pick(["golden", "golden", "meteor"]);
+  if (type === "golden") {
+    G.event = { type, t: 12 };
+    toast("✨ <b>Golden Swarm</b> — everything gold is worth triple!");
+    SFX.levelup();
+    const p = G.player, vr = viewRadius();
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * TAU, dd = vr * rand(0.45, 1.15);
+      G.objs.push({ x: p.x + Math.cos(a) * dd, y: p.y + Math.sin(a) * dd,
+        vx: rand(-1, 1) * p.r * 0.25, vy: rand(-1, 1) * p.r * 0.25,
+        r: p.r * rand(0.22, 0.42), name: "Golden Mote", color: "#ffd04a", shape: "blob", tier: G.evoIndex,
+        ai: null, a: 0, spin: rand(-0.5, 0.5), wob: Math.random() * 9, hp: 0, golden: true,
+        fireT: 0, dartT: 0, wx: 0, wy: 0, stun: 0 });
+    }
+  } else {
+    G.event = { type, t: 9, spawnT: 0.4 };
+    toast("☄️ <b>Meteor Storm</b> — dodge the debris!");
+    SFX.crunch();
+    FX.addShake(8);
+  }
+}
+function spawnMeteor() {
+  const p = G.player, vr = viewRadius();
+  const a = Math.random() * TAU;
+  const sx = p.x + Math.cos(a) * vr * 1.35, sy = p.y + Math.sin(a) * vr * 1.35;
+  const tx = p.x + rand(-0.55, 0.55) * vr, ty = p.y + rand(-0.55, 0.55) * vr;
+  const dd = Math.max(1, Math.hypot(tx - sx, ty - sy));
+  const sp = p.r * rand(3.0, 4.0);
+  G.shots.push({ x: sx, y: sy, vx: (tx - sx) / dd * sp, vy: (ty - sy) / dd * sp,
+    r: p.r * rand(0.2, 0.32), life: 2.8, c: "#ff8a4a", meteor: true, dmg: 12 });
+}
+function updateWorldEvents(dt) {
+  if (G.boss) return; // events stay out of boss fights
+  if (G.event) {
+    G.event.t -= dt;
+    if (G.event.type === "meteor") {
+      G.event.spawnT -= dt;
+      if (G.event.spawnT <= 0 && G.shots.length < 40) {
+        G.event.spawnT = 0.55;
+        spawnMeteor();
+      }
+    }
+    if (G.event.t <= 0) { G.event = null; G.eventT = rand(38, 65); }
+  } else {
+    G.eventT -= dt;
+    if (G.eventT <= 0 && G.time > 18) startWorldEvent();
+  }
+}
+
 /* ---------------- boss ---------------- */
 function spawnBoss(bdef) {
   if (G.mode === "zen") return;
@@ -1092,11 +1144,20 @@ function spawnBoss(bdef) {
     def: bdef, name: name, color: bdef.color,
     x: p.x + Math.cos(ang) * viewRadius() * 1.2, y: p.y + Math.sin(ang) * viewRadius() * 1.2,
     vx: 0, vy: 0, r, hp: hp, maxHp: hp,
-    phase: "stalk", t: 0, telA: 0, wob: Math.random() * 9, hitFlash: 0, summonT: 4, shootT: 2.4
+    phase: "stalk", t: 0, telA: 0, wob: Math.random() * 9, hitFlash: 0, summonT: 4, shootT: 2.4,
+    phaseIdx: 0, dashesLeft: 0, volley: 0
   };
   $("bossWrap").style.display = "block";
   $("bossName").textContent = name;
-  toast("<b>" + name + "</b> hunts you");
+  G.slowmoT = Math.max(G.slowmoT || 0, 0.9); // cinematic entrance
+  showBossBanner(name, bdef.final);
+}
+function showBossBanner(name, final) {
+  const t = $("bossToast");
+  if (!t) return;
+  $("bossToastName").textContent = name;
+  $("bossToastLabel").textContent = final ? "FINAL HUNGER" : "WARNING";
+  t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
 }
 function bossDamage(amount) {
   const b = G.boss; if (!b) return;
@@ -1108,6 +1169,7 @@ function bossDamage(amount) {
 function killBoss() {
   const b = G.boss; if (!b) return;
   SFX.bossDie();
+  G.slowmoT = Math.max(G.slowmoT || 0, 0.6); // savor the kill
   FX.addShake(34); FX.addHitstop(0.22 * G.stats.hitstopMult); FX.flash = 0.7;
   FX.burst(b.x, b.y, b.color, 80, b.r * 0.05, b.r * 0.08, 1.2);
   FX.burst(b.x, b.y, "#fff", 40, b.r * 0.07, b.r * 0.05, 0.9);
@@ -1201,6 +1263,7 @@ function consume(o, chained) {
   // value
   let val = eatValue(o);
   if (o.shardVal) val = o.shardVal * s.shardValue;
+  if (o.golden) { val *= 3; FX.text(o.x, o.y - o.r * 1.5, "GOLDEN ×3", "#ffd04a", 1.1); }
   const doubled = Math.random() < s.doubleChance;
   if (doubled) val *= 2;
   addXp(val);
@@ -1900,7 +1963,7 @@ function update(dt) {
     if (sh.life <= 0) { G.shots.splice(i, 1); continue; }
     if (dist2(sh.x, sh.y, p.x, p.y) < (p.r * 0.85 + sh.r) ** 2) {
       G.shots.splice(i, 1);
-      hurt(7, "incoming fire", sh.x, sh.y);
+      hurt(sh.dmg || 7, sh.meteor ? "a meteor" : "incoming fire", sh.x, sh.y);
     }
   }
 
@@ -1916,6 +1979,9 @@ function update(dt) {
     if (p.r >= c.r * 0.9 && d < p.r + c.r * 0.65) { G.victoryCore = null; victory(); return; }
   }
 
+  /* ---- world events ---- */
+  updateWorldEvents(dt);
+
   /* ---- spawn maintenance ---- */
   const maxObjs = P.settings.perf ? 80 : 130;
   let burstSpawn = 0;
@@ -1930,28 +1996,62 @@ function updateBoss(wdt, dt) {
   b.fleeT = Math.max(0, (b.fleeT || 0) - wdt);
   const dx = p.x - b.x, dy = p.y - b.y;
   const d = Math.max(1, Math.hypot(dx, dy));
-  const sp = b.r * 0.95;
-  /* phases */
+  /* escalation: bosses get faster and meaner at 66% and 33% HP */
+  const frac = b.hp / b.maxHp;
+  const targetPhase = frac < 0.33 ? 2 : frac < 0.66 ? 1 : 0;
+  if (targetPhase > b.phaseIdx) {
+    b.phaseIdx = targetPhase;
+    SFX.bossRoar();
+    FX.addShake(12);
+    FX.ring(b.x, b.y, b.r * 3, b.color, 5);
+    FX.burst(b.x, b.y, b.color, 24, b.r * 0.05, b.r * 0.06, 0.8);
+    for (let i = 0; i < 1 + targetPhase; i++) spawnShard(b.x + rand(-b.r, b.r) * 1.3, b.y + rand(-b.r, b.r) * 1.3, G.xpNeed * 0.05);
+    b.summonT = Math.min(b.summonT, 2);
+    b.shootT = Math.min(b.shootT, 1.2);
+    if (b.def.final) {
+      const names = ["RADIANCE", "COLLAPSE", "SUPERNOVA"];
+      toast("🌟 <b>" + b.name + "</b> enters <b>" + names[targetPhase] + "</b>");
+      FX.flash = 0.5;
+    } else {
+      toast("<b>" + b.name + "</b> " + (targetPhase === 1 ? "grows furious!" : "is enraged!"));
+    }
+  }
+  const rage = 1 + 0.18 * b.phaseIdx;
+  const sp = b.r * 0.95 * rage;
+  /* movement phases */
   if (b.phase === "windup") {
     b.telA += wdt;
     b.vx *= Math.pow(0.01, wdt); b.vy *= Math.pow(0.01, wdt);
-    if (b.telA > 0.9) { b.phase = "dash"; b.telA = 0; b.vx = dx / d * sp * 4.4; b.vy = dy / d * sp * 4.4; SFX.crunch(); FX.addShake(6); }
+    if (b.telA > 0.9 - 0.15 * b.phaseIdx) { b.phase = "dash"; b.telA = 0; b.vx = dx / d * sp * 4.4; b.vy = dy / d * sp * 4.4; SFX.crunch(); FX.addShake(6); }
   } else if (b.phase === "dash") {
     b.telA += wdt;
-    if (b.telA > 0.7) { b.phase = "stalk"; b.telA = 0; }
+    if (b.telA > 0.7) {
+      b.telA = 0;
+      if (b.dashesLeft > 0) { b.dashesLeft--; b.phase = "windup"; b.telA = 0.45; } // enraged bosses chain dashes
+      else b.phase = "stalk";
+    }
   } else { // stalk
     const dir = b.fleeT > 0 ? -0.9 : 1;
     b.vx = lerp(b.vx, dx / d * sp * dir, 1 - Math.pow(0.05, wdt));
     b.vy = lerp(b.vy, dy / d * sp * dir, 1 - Math.pow(0.05, wdt));
-    if (b.def.dash && b.fleeT <= 0 && d < viewRadius() * 0.9 && Math.random() < wdt * 0.35) { b.phase = "windup"; b.telA = 0; }
+    if (b.def.dash && b.fleeT <= 0 && d < viewRadius() * 0.9 && Math.random() < wdt * 0.35) {
+      b.phase = "windup"; b.telA = 0;
+      b.dashesLeft = b.phaseIdx >= 2 ? 2 : b.phaseIdx;
+    }
   }
   b.x += b.vx * wdt; b.y += b.vy * wdt;
+  /* final boss: a gravity well drags you in once it starts collapsing */
+  if (b.def.final && b.phaseIdx >= 1 && G.state === "play") {
+    const pull = p.r * (0.9 + 0.6 * (b.phaseIdx - 1)) * wdt;
+    p.vx += (b.x - p.x) / d * pull;
+    p.vy += (b.y - p.y) / d * pull;
+  }
   /* summons */
   if (b.def.summon) {
     b.summonT -= wdt;
     if (b.summonT <= 0) {
-      b.summonT = 5.5;
-      for (let i = 0; i < 2; i++) {
+      b.summonT = 5.5 - 0.8 * b.phaseIdx;
+      for (let i = 0; i < 2 + b.phaseIdx; i++) {
         const tier = clamp(G.evoIndex - randi(0, 1), 0, 19);
         const def = ENEMIES[tier][randi(0, 1)];
         G.objs.push({ x: b.x + rand(-b.r, b.r), y: b.y + rand(-b.r, b.r), vx: 0, vy: 0,
@@ -1961,17 +2061,40 @@ function updateBoss(wdt, dt) {
       if (!P.settings.reduced) FX.ring(b.x, b.y, b.r * 1.8, b.color, 3);
     }
   }
-  /* shots */
+  /* shots: fans widen with rage; enraged shooters alternate in radial rings */
   if (b.def.shoot) {
     b.shootT -= wdt;
     if (b.shootT <= 0 && G.shots.length < 44) {
-      b.shootT = 2.1;
-      const n = 3;
-      for (let i = 0; i < n; i++) {
-        const a = Math.atan2(dy, dx) + (i - (n - 1) / 2) * 0.3;
-        G.shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * p.r * 2.4, vy: Math.sin(a) * p.r * 2.4, r: p.r * 0.16, life: 3.6, c: b.color });
+      b.shootT = 2.1 - 0.3 * b.phaseIdx;
+      b.volley++;
+      if (b.phaseIdx >= 2 && b.volley % 2 === 0) {
+        const n = 10;
+        for (let i = 0; i < n; i++) {
+          const a = i / n * TAU + b.volley * 0.31;
+          G.shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * p.r * 1.7, vy: Math.sin(a) * p.r * 1.7, r: p.r * 0.14, life: 3.2, c: b.color });
+        }
+      } else {
+        const n = 3 + b.phaseIdx;
+        for (let i = 0; i < n; i++) {
+          const a = Math.atan2(dy, dx) + (i - (n - 1) / 2) * 0.3;
+          G.shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * p.r * 2.4, vy: Math.sin(a) * p.r * 2.4, r: p.r * 0.16, life: 3.6, c: b.color });
+        }
       }
       SFX.shard();
+    }
+  }
+  /* final boss supernova: expanding bullet rings independent of the shoot timer */
+  if (b.def.final && b.phaseIdx >= 2) {
+    b.novaT = (b.novaT || 1.5) - wdt;
+    if (b.novaT <= 0 && G.shots.length < 52) {
+      b.novaT = 3.2;
+      SFX.shock();
+      FX.ring(b.x, b.y, b.r * 2.4, "#fff0c0", 4);
+      const n = 12;
+      for (let i = 0; i < n; i++) {
+        const a = i / n * TAU + b.t;
+        G.shots.push({ x: b.x, y: b.y, vx: Math.cos(a) * p.r * 1.4, vy: Math.sin(a) * p.r * 1.4, r: p.r * 0.18, life: 4, c: "#fff0c0" });
+      }
     }
   }
   /* split — at half HP, scatter food + brood once */
@@ -2100,8 +2223,17 @@ function render() {
   }
   /* shots */
   for (const sh of G.shots) {
+    if (sh.meteor) { // streaking tail
+      c.strokeStyle = hexA("#ff8a4a", 0.45);
+      c.lineWidth = sh.r * 0.9;
+      c.lineCap = "round";
+      c.beginPath();
+      c.moveTo(sh.x, sh.y);
+      c.lineTo(sh.x - sh.vx * 0.14, sh.y - sh.vy * 0.14);
+      c.stroke();
+    }
     c.beginPath(); c.arc(sh.x, sh.y, sh.r, 0, TAU);
-    c.fillStyle = "#ff6a6a"; c.fill();
+    c.fillStyle = sh.c || "#ff6a6a"; c.fill();
     c.beginPath(); c.arc(sh.x, sh.y, sh.r * 0.5, 0, TAU);
     c.fillStyle = "#fff0f0"; c.fill();
   }
@@ -2582,6 +2714,7 @@ function frame(ts) {
   if (!(dt > 0)) dt = 0.016;
   lastT = now;
   if (FX.hitstop > 0) { FX.hitstop -= dt; dt *= 0.1; }
+  if (G.slowmoT > 0 && G.state === "play") { G.slowmoT -= dt; dt *= 0.35; }
   if (G.state === "play") update(dt);
   FX.update(dt);
   render();
@@ -2826,6 +2959,13 @@ function drawObject(c, o, t, z) {
     c.restore(); return;
   }
   /* blob (creatures + organic) */
+  if (o.golden && !P.settings.perf) { // golden swarm shimmer
+    const rg = c.createRadialGradient(0, 0, o.r * 0.3, 0, 0, o.r * 2);
+    rg.addColorStop(0, "rgba(255,208,74," + (0.3 + 0.12 * Math.sin(t * 6 + o.wob)) + ")");
+    rg.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = rg;
+    c.fillRect(-o.r * 2, -o.r * 2, o.r * 4, o.r * 4);
+  }
   blobPath(c, o.r, t, o.wob, 9, o.ai ? 0.09 : 0.06);
   c.fillStyle = col; c.fill();
   c.lineWidth = o.r * 0.09;
@@ -2877,13 +3017,41 @@ function drawBoss(c, b, t) {
     c.globalAlpha = 1;
     c.translate(rand(-1, 1) * b.r * 0.04, rand(-1, 1) * b.r * 0.04);
   }
-  /* aura */
+  /* aura — burns hotter with each phase */
   if (!P.settings.perf) {
-    const rg = c.createRadialGradient(0, 0, b.r * 0.5, 0, 0, b.r * 2.1);
-    rg.addColorStop(0, hexA(b.color, 0.28));
+    const ph = b.phaseIdx || 0;
+    const rg = c.createRadialGradient(0, 0, b.r * 0.5, 0, 0, b.r * (2.1 + ph * 0.3));
+    rg.addColorStop(0, hexA(b.color, 0.28 + ph * 0.1));
     rg.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = rg;
-    c.fillRect(-b.r * 2.1, -b.r * 2.1, b.r * 4.2, b.r * 4.2);
+    c.fillRect(-b.r * 2.8, -b.r * 2.8, b.r * 5.6, b.r * 5.6);
+  }
+  /* the final boss carries a rotating halo of light rays */
+  if (b.def.final && !P.settings.perf) {
+    c.save();
+    c.rotate(-t * 0.3);
+    c.strokeStyle = hexA(b.color, 0.3 + 0.1 * Math.sin(t * 3));
+    c.lineWidth = b.r * 0.06;
+    c.lineCap = "round";
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * TAU;
+      c.beginPath();
+      c.moveTo(Math.cos(a) * b.r * 1.45, Math.sin(a) * b.r * 1.45);
+      c.lineTo(Math.cos(a) * b.r * (2.1 + 0.2 * Math.sin(t * 4 + i)), Math.sin(a) * b.r * (2.1 + 0.2 * Math.sin(t * 4 + i)));
+      c.stroke();
+    }
+    c.restore();
+    /* gravity well cue while collapsing */
+    if ((b.phaseIdx || 0) >= 1) {
+      c.save();
+      c.rotate(t * 0.8);
+      c.strokeStyle = hexA(b.color, 0.18);
+      c.lineWidth = b.r * 0.04;
+      c.setLineDash([b.r * 0.3, b.r * 0.25]);
+      c.beginPath(); c.arc(0, 0, b.r * 2.6, 0, TAU); c.stroke();
+      c.setLineDash([]);
+      c.restore();
+    }
   }
   /* spikes */
   c.save(); c.rotate(t * 0.4);
