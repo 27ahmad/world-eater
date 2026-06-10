@@ -409,47 +409,137 @@ const AudioSys = (() => {
   };
 
   /* --- generative music: dark pulse that intensifies with scale band --- */
-  const SCALES = [[0,3,5,7,10],[0,2,3,7,8],[0,3,7,10,14],[0,2,5,7,9]];
+  const SCALES = [[0,3,5,7,10],[0,2,3,7,8],[0,3,7,10,14],[0,2,5,7,9],[0,2,4,7,9]];
+  const BAND_ROOTS = [55, 65.41, 58.27, 49.00, 43.65, 38.89]; // roots for Petri, Underfoot, Streets, Skyline, Orbit, Deep Void
   let beat = 0;
+  let lastMelodyNote = 5;
+
+  function playLeadNote(freq, dur, t) {
+    if (!ctx) return;
+    const carrier = ctx.createOscillator();
+    const modulator = ctx.createOscillator();
+    const modGain = ctx.createGain();
+    const ampGain = ctx.createGain();
+    
+    carrier.type = "sine";
+    modulator.type = "sine";
+    
+    // Modulator frequency is harmonic (typically 2x or 3x carrier)
+    const ratio = 2.0;
+    modulator.frequency.setValueAtTime(freq * ratio, t);
+    carrier.frequency.setValueAtTime(freq, t);
+    
+    // Scale modulation index with player combo for more aggression / excitement
+    const comboBonus = (typeof G !== "undefined" && G.comboNum > 5) ? Math.min(G.comboNum, 20) * 0.4 : 0;
+    const modPeak = freq * (2.8 + comboBonus);
+    
+    env(modGain, t, 0.008, modPeak, dur * 0.6, 0.0001);
+    env(ampGain, t, 0.012, 0.12, dur, 0.0001);
+    
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+    carrier.connect(ampGain);
+    ampGain.connect(musicGain);
+    
+    modulator.start(t);
+    carrier.start(t);
+    modulator.stop(t + dur + 0.05);
+    carrier.stop(t + dur + 0.05);
+  }
+
   function startMusic() {
     if (musicTimer) return;
     const tick = () => {
       if (!ctx || ctx.state !== "running") return;
-      const intensity = (typeof G !== "undefined" && G.state === "play") ? G.evoIndex / 19 : 0.08;
-      const root = 55 * Math.pow(2, Math.floor(intensity * 3) * 0 + (intensity > 0.7 ? 1 : 0));
-      const scale = SCALES[Math.floor(intensity * 3.99)];
+      
+      const inPlay = (typeof G !== "undefined" && G.state === "play");
+      const intensity = inPlay ? G.evoIndex / 19 : 0.08;
+      
+      // Select base root frequency and scale based on active scale band
+      let bandIdx = 0;
+      if (inPlay && typeof bandFor === "function") {
+        const band = bandFor(G.evoIndex || 0);
+        bandIdx = BANDS.indexOf(band);
+        if (bandIdx < 0) bandIdx = 0;
+      }
+      const baseRoot = BAND_ROOTS[bandIdx];
+      const scale = SCALES[Math.min(SCALES.length - 1, bandIdx)];
+      
+      // Determine chord progression based on state: Zen, Boss, or Standard
+      let progression = [0, 3, 7, 5]; // Standard minor: i - III - v - IV
+      if (inPlay && G.mode === "zen") {
+        progression = [0, 5, 7, 9]; // Zen pentatonic: I - IV - V - vi
+      } else if (inPlay && G.boss) {
+        progression = [0, 1, 0, -2]; // Boss tension: i - bII - i - bVII
+      }
+      
+      const chordIdx = Math.floor(beat / 4) % 4;
+      const chordOffset = progression[chordIdx];
+      
+      // Chord root frequency
+      const root = baseRoot * Math.pow(2, chordOffset / 12);
       const t = ctx.currentTime;
-      // bass pulse
+      
+      // 1. Bass Pulse (Beats 0 and 2 of each 4-beat bar)
       if (beat % 2 === 0) {
         const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "sine"; o.frequency.value = root;
-        env(g, t, 0.01, 0.5, 0.4, 0.0001);
-        o.connect(g); g.connect(musicGain); o.start(t); o.stop(t + 0.5);
+        o.type = "sine";
+        o.frequency.value = root;
+        env(g, t, 0.015, 0.45, 0.45, 0.0001);
+        o.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + 0.5);
       }
-      // arp note
-      if (Math.random() < 0.65 + intensity * 0.3) {
-        const semis = pick(scale) + 12 * (1 + (Math.random() < intensity ? 1 : 0));
-        const f = root * Math.pow(2, semis / 12);
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = intensity > 0.5 ? "sawtooth" : "triangle"; o.frequency.value = f;
-        env(g, t + 0.02, 0.02, 0.10 + intensity * 0.08, 0.55, 0.0001);
-        const flt = ctx.createBiquadFilter(); flt.type = "lowpass"; flt.frequency.value = 600 + intensity * 2600;
-        o.connect(flt); flt.connect(g); g.connect(musicGain); o.start(t); o.stop(t + 0.8);
+      
+      // 2. Structured Generative Melody using FM Lead Synth
+      const stepInBar = beat % 4;
+      // High chance to play lead notes on first and third beats, moderate on offbeats
+      const playProb = (stepInBar === 0) ? 0.95 : (stepInBar === 2 ? 0.8 : 0.5);
+      if (Math.random() < playProb + intensity * 0.15) {
+        let noteOffset = 0;
+        if (stepInBar === 0) {
+          // Resolve melody back to chord root (octave transposed)
+          noteOffset = scale[0] + 12;
+        } else {
+          // Procedural random walk inside the pentatonic scale to ensure pleasant melodies
+          const options = [-2, -1, 1, 2];
+          lastMelodyNote = clamp(lastMelodyNote + pick(options), 0, scale.length * 2 - 1);
+          const sIdx = lastMelodyNote % scale.length;
+          const octave = Math.floor(lastMelodyNote / scale.length);
+          noteOffset = scale[sIdx] + 12 * (octave + 1);
+        }
+        
+        const noteFreq = root * Math.pow(2, noteOffset / 12);
+        playLeadNote(noteFreq, 0.28, t);
+        
+        // Syncopated secondary note for rhythmic syncopation on off-beats
+        if ((stepInBar === 2 || stepInBar === 3) && Math.random() < 0.35 + intensity * 0.25) {
+          const bounceOffset = noteOffset + pick([-2, 2, 3]);
+          const bounceFreq = root * Math.pow(2, bounceOffset / 12);
+          playLeadNote(bounceFreq, 0.14, t + 0.15);
+        }
       }
-      // airy pad every 8 beats
+      
+      // 3. Airy Ambient Pad every 8 beats
       if (beat % 8 === 0) {
-        const f = root * 4 * Math.pow(2, pick(scale) / 12);
+        const f = root * 2 * Math.pow(2, pick(scale) / 12);
         const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = "sine"; o.frequency.value = f;
-        env(g, t, 0.4, 0.06, 2.2, 0.0001);
-        o.connect(g); g.connect(musicGain); o.start(t); o.stop(t + 3);
+        o.type = "sine";
+        o.frequency.value = f;
+        env(g, t, 0.5, 0.07, 2.8, 0.0001);
+        o.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + 3.5);
       }
+      
       beat++;
     };
     const loop = () => {
       tick();
-      const intensity = (typeof G !== "undefined" && G.state === "play") ? G.evoIndex / 19 : 0;
-      musicTimer = setTimeout(loop, 300 - intensity * 110);
+      // Speeds up tempo based on evolution stage and boss fight states
+      const inPlay = (typeof G !== "undefined" && G.state === "play");
+      const intensity = inPlay ? G.evoIndex / 19 : 0;
+      const speedUp = inPlay && G.boss ? 0.25 : 0;
+      const stepDuration = Math.max(160, 310 - (intensity + speedUp) * 115);
+      musicTimer = setTimeout(loop, stepDuration);
     };
     loop();
   }
@@ -610,26 +700,43 @@ function newRunStats() {
   return s;
 }
 
+let selectedMode = "standard";
+
 function startRun() {
   G.world = WORLDS.find(w => w.id === P.world) || WORLDS[0];
+  G.mode = selectedMode || "standard";
+  G.rushBossIndex = 0;
+  G.endlessCycle = 0;
   G.stats = newRunStats();
-  const startR = EVOR[0] * (P.owned["perk_head"] ? 1.15 : 1);
+
+  if (G.mode === "rush") {
+    G.evoIndex = 10;
+    G.level = 10;
+    G.pendingMutations = 5;
+  } else {
+    G.evoIndex = 0;
+    G.level = 1;
+    G.pendingMutations = 0;
+  }
+
+  const startR = EVOR[G.evoIndex] * (P.owned["perk_head"] ? 1.15 : 1);
   G.player = {
     x: 0, y: 0, vx: 0, vy: 0, r: startR, targetR: startR,
     mouth: 0, blink: 0, iframe: 0, hurtT: 0, rageT: 0, dashT: 0,
     eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
     manualDashCd: 0
   };
-  G.objs = []; G.shots = []; G.boss = null; G.victoryCore = null;
-  G.evoIndex = 0; G.level = 1; G.xp = 0; G.xpNeed = 14; G.pendingMutations = 0;
+  G.objs = []; G.shots = []; G.boss = null; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
+  G.xp = 0;
+  G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
   G.eaten = 0; G.time = 0; G.slowmo = 1; G.upCount = 0;
-  if (P.owned["perk_start2"]) {
+  if (P.owned["perk_start2"] && G.mode !== "rush") {
     G.pendingMutations = 1;
     G.level = 2;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   }
-  G.run = { maxEvoRun: 0, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false, diet: { blob: 0, rect: 0, poly: 0, glow: 0 } };
+  G.run = { maxEvoRun: G.evoIndex, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false, diet: { blob: 0, rect: 0, poly: 0, glow: 0 } };
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
@@ -637,6 +744,7 @@ function startRun() {
   $("hint").style.display = "";
   setTimeout(() => { $("hint").style.display = "none"; }, 6000);
   G.state = "play";
+  checkBossSpawn();
   refreshHud(true);
 }
 
@@ -660,8 +768,11 @@ function spawnObject(initial) {
   const stage = G.evoIndex;
   const roll = Math.random();
   let tier = stage + (roll < 0.42 ? 0 : roll < 0.66 ? -1 : roll < 0.90 ? 1 : 2);
+  if (G.mode === "zen") {
+    tier = Math.min(tier, G.evoIndex);
+  }
   tier = clamp(tier, 0, 19);
-  const isEnemy = Math.random() < (0.13 + stage * 0.004) && G.time > 6;
+  const isEnemy = G.mode === "zen" ? false : Math.random() < (0.13 + stage * 0.004) && G.time > 6;
   let def, name, color, shape, ai = null;
   if (isEnemy) {
     const idx = randi(0, 1);
@@ -672,7 +783,11 @@ function spawnObject(initial) {
     def = CONSUMABLES[tier][idx];
     name = tierName(tier, idx); shape = def[1]; color = def[2];
   }
-  const base = EVOR[tier];
+  let sizeScale = 1.0;
+  if (G.mode === "endless" && p.r > EVOR[19]) {
+    sizeScale = p.r / EVOR[19];
+  }
+  const base = EVOR[tier] * sizeScale;
   let r;
   if (tier <= stage) r = base * rand(0.42, 0.92);                 // edible-ish
   else r = base * rand(0.7, 1.05);                                 // threats
@@ -695,20 +810,28 @@ function spawnShard(x, y, val) {
 
 /* ---------------- boss ---------------- */
 function spawnBoss(bdef) {
+  if (G.mode === "zen") return;
   SFX.bossRoar();
   FX.addShake(20);
   const p = G.player;
   const ang = Math.random() * TAU;
+  
+  // Scale boss health based on endless cycle
+  const cycle = G.endlessCycle || 0;
+  const scale = 1 + cycle * 0.45;
+  const hp = bdef.hp * scale;
+  const name = bdef.name + (cycle > 0 ? " +" + cycle : "");
+  
   const r = p.r * 1.9;
   G.boss = {
-    def: bdef, name: bdef.name, color: bdef.color,
+    def: bdef, name: name, color: bdef.color,
     x: p.x + Math.cos(ang) * viewRadius() * 1.2, y: p.y + Math.sin(ang) * viewRadius() * 1.2,
-    vx: 0, vy: 0, r, hp: bdef.hp, maxHp: bdef.hp,
+    vx: 0, vy: 0, r, hp: hp, maxHp: hp,
     phase: "stalk", t: 0, telA: 0, wob: Math.random() * 9, hitFlash: 0, summonT: 4, shootT: 2.4
   };
   $("bossWrap").style.display = "block";
-  $("bossName").textContent = bdef.name;
-  toast("⚠️ <b>" + bdef.name + "</b> hunts you");
+  $("bossName").textContent = name;
+  toast("⚠️ <b>" + name + "</b> hunts you");
 }
 function bossDamage(amount) {
   const b = G.boss; if (!b) return;
@@ -735,14 +858,31 @@ function killBoss() {
   for (let i = 0; i < 10; i++) spawnShard(b.x + rand(-b.r, b.r), b.y + rand(-b.r, b.r), G.xpNeed * 0.08);
   toast("💀 <b>" + b.name + "</b> devoured! +" + fmtInt(reward));
   $("bossWrap").style.display = "none";
+  if (G.mode === "rush") {
+    G.rushBossIndex = (G.rushBossIndex || 0) + 1;
+    G.boss = null;
+    checkAch();
+    if (G.rushBossIndex >= BOSSES.length) {
+      G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
+      toast("🌌 Boss Rush Conquered! Consume the Core to win.");
+    } else {
+      checkBossSpawn();
+    }
+    return;
+  }
   if (b.def.final) {
-    // spawn the Universe Core — eat it to win
-    G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
-    toast("🌌 The <b>Universe Core</b> is exposed. Consume it.");
+    if (G.mode === "endless") {
+      G.endlessCycle = (G.endlessCycle || 0) + 1;
+      for (let k in G.run.bossKilled) delete G.run.bossKilled[k];
+      toast("🔄 Boss cycle restarted! Endless Scale " + (G.endlessCycle + 1));
+    } else {
+      G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
+      toast("🌌 The <b>Universe Core</b> is exposed. Consume it.");
+    }
   }
   G.boss = null;
   checkAch();
-  if (!b.def.final) {
+  if (!b.def.final || G.mode === "endless") {
     checkBossSpawn();
   }
 }
@@ -835,6 +975,22 @@ function shockwave() {
   const R = p.r * 5 * s.shockSize;
   FX.ring(p.x, p.y, R, "#00f5d4", 5);
   FX.burst(p.x, p.y, "#00f5d4", 24, p.r * 0.08, p.r * 0.06, 0.7);
+  if (G.fusions && G.fusions.spikeStorm) {
+    for (let i = 0; i < 8; i++) {
+      const ang = i / 8 * Math.PI * 2;
+      const sv = p.r * 4.5;
+      if (!G.playerShots) G.playerShots = [];
+      G.playerShots.push({
+        x: p.x + Math.cos(ang) * p.r,
+        y: p.y + Math.sin(ang) * p.r,
+        vx: Math.cos(ang) * sv,
+        vy: Math.sin(ang) * sv,
+        r: p.r * 0.12,
+        life: 1.5,
+        c: "#00f5a0"
+      });
+    }
+  }
   G.objs.forEach(o => {
     if (dist2(o.x, o.y, p.x, p.y) < R * R) {
       o.stun = Math.max(o.stun, 2.2);
@@ -846,8 +1002,9 @@ function shockwave() {
 }
 function hurt(amount, srcName, srcX, srcY) {
   const p = G.player, s = G.stats;
-  if (p.iframe > 0 || G.state !== "play") return;
+  if (G.mode === "zen" || p.iframe > 0 || G.state !== "play") return;
   let dmg = amount * s.armor;
+  if (G.fusions && G.fusions.ironClad && srcName !== "incoming fire") dmg *= 0.6;
   s.hp -= dmg;
   G.run.damageTaken += dmg;
   p.iframe = s.iframes; p.hurtT = 0.35;
@@ -935,9 +1092,39 @@ function renderUpgradeCards() {
     wrap.appendChild(rr);
   }
 }
+
+function checkFusions() {
+  if (!G.fusions) G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false };
+  
+  if (!G.fusions.spikeStorm && (runUpgradeCounts.thorns || 0) === 3 && (runUpgradeCounts.burst || 0) === 4) {
+    G.fusions.spikeStorm = true;
+    triggerFusionUnlock("Spike Storm 🌵⚡", "Shockwaves release 8 piercing spines!");
+  }
+  if (!G.fusions.gravitySlipstream && (runUpgradeCounts.vacuum || 0) === 5 && (runUpgradeCounts.slipstream || 0) === 1) {
+    G.fusions.gravitySlipstream = true;
+    triggerFusionUnlock("Gravity Slipstream 🌀🌊", "Dashing creates a gravitational trail pulling prey!");
+  }
+  if (!G.fusions.ironClad && (runUpgradeCounts.density || 0) === 4 && (runUpgradeCounts.thickhide || 0) === 5) {
+    G.fusions.ironClad = true;
+    triggerFusionUnlock("Iron Clad 🪨🛡️", "Collision armor increased by 40% against bigger threats!");
+  }
+  if (!G.fusions.reaverRage && (runUpgradeCounts.rage || 0) === 1 && (runUpgradeCounts.vampiric || 0) === 3) {
+    G.fusions.reaverRage = true;
+    triggerFusionUnlock("Reaver Rage 🩸🧛", "All bites heal +2 HP during Blood Rage!");
+  }
+}
+
+function triggerFusionUnlock(title, desc) {
+  SFX.levelup();
+  FX.flash = 0.6;
+  if (G.player) FX.ring(G.player.x, G.player.y, G.player.r * 4, "#00f5d4", 6);
+  toast("✨ <b>FUSION UNLOCKED: " + title + "</b><br>" + desc);
+}
+
 function pickUpgrade(u) {
   SFX.pick();
   runUpgradeCounts[u.id] = (runUpgradeCounts[u.id] || 0) + 1;
+  checkFusions();
   const s = G.stats;
   const beforeMax = s.maxHp;
   u.apply(s);
@@ -963,7 +1150,21 @@ function pickUpgrade(u) {
 }
 
 function checkBossSpawn() {
-  if (G.boss || G.bossPending || G.state !== "play") return;
+  if (G.boss || G.bossPending || G.state !== "play" || G.mode === "zen") return;
+  if (G.mode === "rush") {
+    if (G.rushBossIndex < BOSSES.length) {
+      G.bossPending = true;
+      const runToken = G.run;
+      const fire = () => {
+        if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
+        if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; }
+        G.bossPending = false;
+        if (G.rushBossIndex < BOSSES.length) spawnBoss(BOSSES[G.rushBossIndex]);
+      };
+      setTimeout(fire, 2600);
+    }
+    return;
+  }
   const eligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
   if (eligible.length) {
     G.bossPending = true;
@@ -999,6 +1200,7 @@ function autoMutateOne() {
 
 function pickUpgradeQuiet(u) {
   runUpgradeCounts[u.id] = (runUpgradeCounts[u.id] || 0) + 1;
+  checkFusions();
   const s = G.stats;
   const beforeMax = s.maxHp;
   u.apply(s);
@@ -1365,6 +1567,69 @@ function update(dt) {
     }
   }
 
+  /* ---- gravity trails (Gravity Slipstream) ---- */
+  if (G.fusions && G.fusions.gravitySlipstream) {
+    if (p.dashT > 0 && Math.random() < 0.25) {
+      if (!G.gravityTrails) G.gravityTrails = [];
+      G.gravityTrails.push({ x: p.x, y: p.y, r: p.r * 1.8, life: 1.2, maxLife: 1.2 });
+    }
+    if (G.gravityTrails) {
+      for (let i = G.gravityTrails.length - 1; i >= 0; i--) {
+        const gt = G.gravityTrails[i];
+        gt.life -= dt;
+        if (gt.life <= 0) { G.gravityTrails.splice(i, 1); continue; }
+        for (const o of G.objs) {
+          if (o.shape !== "shard" && o.r < p.r * (1 + s.biteSize)) {
+            const dx = gt.x - o.x, dy = gt.y - o.y;
+            const d = Math.max(1, Math.hypot(dx, dy));
+            if (d < gt.r * 2.5) {
+              const pull = p.r * 5.0 * (gt.life / gt.maxLife) * dt;
+              o.x += dx / d * pull;
+              o.y += dy / d * pull;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /* ---- player shots / thorns (Spike Storm) ---- */
+  if (G.playerShots) {
+    for (let i = G.playerShots.length - 1; i >= 0; i--) {
+      const sh = G.playerShots[i];
+      sh.x += sh.vx * wdt; sh.y += sh.vy * wdt; sh.life -= wdt;
+      if (sh.life <= 0) { G.playerShots.splice(i, 1); continue; }
+      if (G.boss && dist2(sh.x, sh.y, G.boss.x, G.boss.y) < (G.boss.r + sh.r) ** 2) {
+        bossDamage((5 + p.r * 0.05) * s.bossDmg);
+        FX.burst(sh.x, sh.y, "#00f5d4", 6, sh.r, sh.r, 0.4);
+        G.playerShots.splice(i, 1);
+        continue;
+      }
+      let hit = false;
+      for (let j = G.objs.length - 1; j >= 0; j--) {
+        const o = G.objs[j];
+        if (o.ai && o.r >= p.r * (1 + s.biteSize)) {
+          if (dist2(sh.x, sh.y, o.x, o.y) < (o.r + sh.r) ** 2) {
+            o.vx += sh.vx * 0.45; o.vy += sh.vy * 0.45;
+            o.stun = Math.max(o.stun || 0, 1.8);
+            FX.burst(sh.x, sh.y, "#00f5d4", 6, sh.r, sh.r, 0.4);
+            hit = true;
+            break;
+          }
+        } else if (o.shape !== "shard" && o.r < p.r * (1 + s.biteSize)) {
+          if (dist2(sh.x, sh.y, o.x, o.y) < (o.r + sh.r) ** 2) {
+            consume(o);
+            G.objs.splice(j, 1);
+            FX.burst(sh.x, sh.y, "#00f5a0", 8, sh.r, sh.r, 0.5);
+            hit = true;
+            break;
+          }
+        }
+      }
+      if (hit) { G.playerShots.splice(i, 1); }
+    }
+  }
+
   /* ---- objects ---- */
   const magR = p.r * 2.6 * s.magnet;
   const eatBound = p.r * (1 + s.biteSize);
@@ -1396,6 +1661,7 @@ function update(dt) {
       const ratio = o.r / p.r;
       let dmg = clamp(6 + ratio * 6, 6, 26);
       if (ratio > 1.6) dmg *= s.bigArmor;
+      if (G.fusions && G.fusions.ironClad && ratio > 1.0) dmg *= 0.6;
       hurt(dmg, o.name, o.x, o.y);
     }
     /* enemy AI */
@@ -1541,6 +1807,10 @@ function updateBoss(wdt, dt) {
       p.biteCd = 0.3;
       const dmg = (6 + p.r * 0.085) * s.bossDmg;
       bossDamage(dmg);
+      if (G.fusions && G.fusions.reaverRage && p.rageT > 0) {
+        s.hp = Math.min(s.maxHp, s.hp + 2);
+        FX.text(p.x, p.y - p.r, "+2 HP", "#00f5a0", 1.0);
+      }
       b.bites = (b.bites || 0) + 1;
       if (b.bites % 3 === 0) b.fleeT = 1.3;
       FX.addHitstop(0.05 * s.hitstopMult); FX.addShake(7);
@@ -1627,6 +1897,18 @@ function render() {
   c.translate(-p.x, -p.y);
   const vr = viewRadius() * 1.15;
 
+  /* gravity trails */
+  if (G.fusions && G.fusions.gravitySlipstream && G.gravityTrails) {
+    c.save();
+    for (const gt of G.gravityTrails) {
+      c.strokeStyle = "rgba(0, 245, 212, " + (gt.life / gt.maxLife * 0.18) + ")";
+      c.lineWidth = 1.8 / z;
+      c.setLineDash([8 / z, 8 / z]);
+      c.beginPath(); c.arc(gt.x, gt.y, gt.r, 0, TAU); c.stroke();
+    }
+    c.restore();
+  }
+
   /* objects */
   for (const o of G.objs) {
     if (Math.abs(o.x - p.x) > vr * (W / Math.min(W, H)) + o.r || Math.abs(o.y - p.y) > vr + o.r) continue;
@@ -1638,6 +1920,15 @@ function render() {
     c.fillStyle = "#ff6a6a"; c.fill();
     c.beginPath(); c.arc(sh.x, sh.y, sh.r * 0.5, 0, TAU);
     c.fillStyle = "#fff0f0"; c.fill();
+  }
+  /* player shots */
+  if (G.playerShots) {
+    for (const sh of G.playerShots) {
+      c.beginPath(); c.arc(sh.x, sh.y, sh.r, 0, TAU);
+      c.fillStyle = sh.c || "#00f5a0"; c.fill();
+      c.beginPath(); c.arc(sh.x, sh.y, sh.r * 0.5, 0, TAU);
+      c.fillStyle = "#ffffff"; c.fill();
+    }
   }
   /* universe core */
   if (G.victoryCore) drawCore(c, G.victoryCore, t);
@@ -2033,6 +2324,18 @@ function bindSettings() {
 
 /* ---------------- screen buttons ---------------- */
 function bindUI() {
+  document.querySelectorAll(".mode-tab").forEach(tab => {
+    tab.onclick = () => {
+      SFX.ui();
+      document.querySelectorAll(".mode-tab").forEach(t => {
+        const isActive = (t === tab);
+        t.classList.toggle("active", isActive);
+        t.style.color = isActive ? "" : "var(--dim)";
+      });
+      selectedMode = tab.getAttribute("data-mode");
+    };
+  });
+
   $("playBtn").onclick = () => { AudioSys.unlock(); SFX.ui(); startRun(); };
   $("worldsBtn").onclick = () => { AudioSys.unlock(); SFX.ui(); buildWorldGrid(); show("worldsScreen"); };
   $("shopBtn").onclick = () => { AudioSys.unlock(); SFX.ui(); buildShop(); show("shopScreen"); };
@@ -2149,6 +2452,39 @@ function drawObject(c, o, t, z) {
     c.globalAlpha = 1;
   }
   const col = o.color;
+
+  /* Draw flagella tail for moving AI creatures */
+  if (o.ai && (o.vx !== 0 || o.vy !== 0) && o.shape !== "shard" && !P.settings.perf) {
+    const ang = Math.atan2(o.vy, o.vx);
+    c.save();
+    c.rotate(ang + Math.PI);
+    c.beginPath();
+    c.moveTo(o.r * 0.7, 0);
+    const segments = 6;
+    const tailLength = o.r * 1.1;
+    c.lineWidth = o.r * 0.1;
+    c.strokeStyle = shade(col, 0.65);
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    for (let i = 1; i <= segments; i++) {
+      const ratio = i / segments;
+      const lx = o.r * 0.7 + ratio * tailLength;
+      const wiggle = o.r * 0.2 * Math.sin(t * 12 + o.wob + i * 0.8) * (1 - ratio * 0.3);
+      c.lineTo(lx, wiggle);
+    }
+    c.stroke();
+    c.restore();
+  }
+
+  /* squishy physics deformation for AI creatures */
+  if (o.ai && (o.vx !== 0 || o.vy !== 0) && o.shape !== "shard") {
+    const sp = Math.hypot(o.vx, o.vy);
+    const squish = 1 + Math.min(sp / (o.r * 6), 0.15);
+    const ang = Math.atan2(o.vy, o.vx);
+    c.rotate(ang);
+    c.scale(squish, 1 / squish);
+    c.rotate(-ang);
+  }
   if (o.shape === "shard") {
     const pl = 1 + 0.18 * Math.sin(t * 6 + o.wob);
     c.rotate(o.a);
@@ -2414,6 +2750,28 @@ function drawPlayer(c, t) {
       c.fill();
       c.restore();
     }
+    c.restore();
+  }
+
+  /* flagella tail */
+  if (!P.settings.perf) {
+    c.save();
+    c.rotate(p.faceA + Math.PI);
+    c.beginPath();
+    c.moveTo(p.r * 0.7, 0);
+    const segments = 10;
+    const tailLength = p.r * 1.5;
+    c.lineWidth = p.r * 0.12;
+    c.strokeStyle = shade(col, 0.55);
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    for (let i = 1; i <= segments; i++) {
+      const ratio = i / segments;
+      const lx = p.r * 0.7 + ratio * tailLength;
+      const wiggle = p.r * 0.28 * Math.sin(t * 15 - i * 0.6) * (1 - ratio * 0.3);
+      c.lineTo(lx, wiggle);
+    }
+    c.stroke();
     c.restore();
   }
 

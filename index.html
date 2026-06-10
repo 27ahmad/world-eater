@@ -194,6 +194,8 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 @media (max-width:600px){
   .ach-row{padding:8px 10px}
 }
+.mode-tab{background:transparent;color:var(--bone);cursor:pointer;border:none;border:1px solid transparent}
+.mode-tab.active{background:rgba(0,245,212,0.12);color:var(--hunger);border:1px solid rgba(0,245,212,0.3)}
 @media (prefers-reduced-motion: reduce){
   *{animation-duration:.01s !important;transition-duration:.01s !important}
 }
@@ -240,6 +242,15 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <h1 class="title-display">World&nbsp;Eater</h1>
   <div class="subtitle">Feed The Hunger</div>
   <div style="margin-top:18px"><span class="essence-chip" id="essenceMenu">0</span></div>
+  <div style="margin-top:20px; width:min(320px,86vw)">
+    <div style="font-size:10px; font-weight:800; letter-spacing:0.15em; color:var(--dim); text-transform:uppercase; margin-bottom:8px; text-align:center">Game Mode</div>
+    <div id="modeSelector" style="display:flex; background:rgba(255,255,255,0.03); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px">
+      <button class="mode-tab active" data-mode="standard" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s">Standard</button>
+      <button class="mode-tab" data-mode="endless" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s; color:var(--dim)">Endless</button>
+      <button class="mode-tab" data-mode="rush" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s; color:var(--dim)">Rush</button>
+      <button class="mode-tab" data-mode="zen" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s; color:var(--dim)">Zen</button>
+    </div>
+  </div>
   <div class="menu-stack">
     <button class="btn primary" id="playBtn">DEVOUR</button>
     <button class="btn" id="worldsBtn">&#127757; Worlds</button>
