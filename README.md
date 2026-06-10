@@ -6,11 +6,10 @@ A self-contained HTML5 canvas browser game. Eat and grow from a microscopic mote
 Play the game here: https://27ahmad.github.io/world-eater/
 
 ## Controls
-- Drag or move mouse to move player mote.
+- Drag or move mouse (or WASD / arrow keys) to move the player mote.
 - Devour objects smaller than you to grow.
-- Press Space to mutate when the Mutation Prompt appears on screen.
-- Press 1, 2, 3, or 4 to select mutation cards.
-- Press R to reroll mutation choices (if the perk is owned).
+- Mutations happen automatically on level-up, chosen to match what you eat most.
+- Press Space, Shift, F, or E (or double-tap on touch) to dash.
 - Press M to toggle mute/unmute audio.
 - Press Escape or P to pause.
 - Press Enter to resume while paused.

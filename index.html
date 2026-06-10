@@ -126,29 +126,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 #dmgFlash{position:fixed;inset:0;pointer-events:none;z-index:16;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,40,60,.45));opacity:0}
 #evoFlash{position:fixed;inset:0;pointer-events:none;z-index:30;background:#fff;opacity:0}
 
-/* ---------- upgrade modal ---------- */
-#upgradeScreen{z-index:45}
-#upgradeScreen h2{font-size:clamp(20px,4.6vw,30px);letter-spacing:.22em;text-transform:uppercase;font-weight:900;margin-bottom:4px;
-  color:var(--food);text-shadow:0 0 18px rgba(124,255,107,.5)}
-#upgradeScreen .lvl{color:var(--dim);letter-spacing:.3em;text-transform:uppercase;font-size:12px;margin-bottom:22px}
-#upgradeCards{display:flex;gap:14px;width:min(880px,94vw);justify-content:center;flex-wrap:wrap}
-.upCard{flex:1 1 200px;max-width:270px;min-width:180px;background:linear-gradient(180deg,#11212f,#081017);
-  border:1px solid var(--line);border-radius:16px;padding:20px 16px;text-align:center;
-  transition:transform .15s, border-color .15s, box-shadow .15s;animation:cardIn .35s cubic-bezier(.2,1.4,.4,1) backwards}
-.upCard:nth-child(2){animation-delay:.07s}.upCard:nth-child(3){animation-delay:.14s}
-@keyframes cardIn{from{opacity:0;transform:translateY(26px) scale(.92)}}
-.upCard:hover{transform:translateY(-5px);border-color:var(--hunger);box-shadow:0 10px 30px rgba(0,245,212,.25)}
-.upCard .icon{font-size:36px;margin-bottom:10px;filter:drop-shadow(0 0 10px rgba(0,245,212,.4))}
-.upCard .nm{font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:15px;margin-bottom:6px}
-.upCard .ds{font-size:13px;color:var(--dim);line-height:1.45;min-height:38px}
-.upCard .rarity{display:inline-block;margin-top:10px;font-size:10px;letter-spacing:.24em;text-transform:uppercase;
-  padding:3px 10px;border-radius:99px;border:1px solid}
-.r-common{color:#9aa;border-color:#445}
-.r-rare{color:#5db9ff;border-color:#2a6da3}
-.r-epic{color:#d946ef;border-color:#a855f7}
-.r-legend{color:var(--warn);border-color:#a35e1f;text-shadow:0 0 8px rgba(255,154,61,.6)}
-.upCard.legend{border-color:#a35e1f;box-shadow:0 0 24px rgba(255,154,61,.18)}
-
 /* ---------- end screens ---------- */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;width:min(520px,92vw);margin:22px 0}
 .stat-cell{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 8px}
@@ -197,11 +174,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   #dashBadge{min-width:50px;padding:7px 6px;height:51px}
   #dietBadge{min-width:86px;padding:5px 6px;height:51px}
   .diet-values{gap:3px;font-size:9.5px}
-  #hudAutoMutateTog{font-size:7px !important;padding:1px 4px !important;margin-top:2px !important}
   #scoreBox{padding:7px 8px;font-size:0.9em}
-  #upgradeCards{flex-direction:column;align-items:center}
-  .upCard{width:min(320px,88vw);max-width:none;min-height:0}
-  .upCard .ds{min-height:0}
 }
 .ach-row{display:flex;align-items:center;gap:12px;background:#111c24;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:8px;opacity:.42}
 .ach-row.got{opacity:1;border-color:rgba(124,255,107,.45);background:linear-gradient(90deg,rgba(124,255,107,.06),#111c24)}
@@ -248,7 +221,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
         <span class="diet-val" id="dietPoly" title="Kinetic (Speed/Attract)"></span>
         <span class="diet-val" id="dietGlow" title="Cosmic (Gravity/Pulse)"></span>
       </div>
-      <button id="hudAutoMutateTog" style="margin-top:4px; font-size:8px; font-weight:800; color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:2px 6px; cursor:pointer; pointer-events:auto; transition:all 0.15s">AUTO: OFF</button>
     </div>
     <div id="scoreBox">
       <div id="scoreVal">0</div>
@@ -260,11 +232,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <div id="bossWrap"><div id="bossName">MILITARY TITAN</div><div id="bossHpWrap"><div id="bossHpBar"></div></div></div>
   <div id="stageToast"><div class="small" id="stageToastScale">Evolution</div><div class="big" id="stageToastName">RAVENOUS MITE</div></div>
   <div id="toasts"></div>
-  <div id="hint">Drag or move mouse &middot; devour everything smaller &middot; Shift / double-tap to dash</div>
-  <div id="mutationPromptWrap" class="hidden" style="position:absolute;bottom:max(24px,env(safe-area-inset-bottom) + 12px);left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:auto;z-index:25">
-    <button id="mutationPrompt" style="background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">MUTATE NOW (Space)</button>
-    <button id="autoMutateTog" style="background:rgba(255,255,255,0.06);border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:10px 14px;font-weight:bold;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;transition:all 0.15s">Auto: Off</button>
-  </div>
+  <div id="hint">Drag or move mouse &middot; devour everything smaller &middot; Space / double-tap to dash</div>
 </div>
 
 <!-- MAIN MENU -->
@@ -300,13 +268,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
     <button class="btn ghost" id="pauseSettingsBtn">&#9881;&#65039; Settings</button>
     <button class="btn ghost" id="quitBtn">Abandon Run</button>
   </div>
-</div>
-
-<!-- UPGRADES -->
-<div id="upgradeScreen" class="screen overlay hidden">
-  <h2>Mutation</h2>
-  <div class="lvl" id="upgradeLvl">LEVEL 2</div>
-  <div id="upgradeCards"></div>
 </div>
 
 <!-- GAME OVER -->
@@ -409,13 +370,12 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
       <div class="row"><div><div class="lbl">Reduced effects</div><div class="sub">Fewer particles and flashes</div></div><button class="toggle" id="sReduced" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">Performance mode</div><div class="sub">Lower resolution, fewer objects</div></div><button class="toggle" id="sPerf" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">Colorblind-friendly</div><div class="sub">Pattern-coded threats, safer palette</div></div><button class="toggle" id="sCb" role="switch" aria-checked="false"></button></div>
-      <div class="row"><div><div class="lbl">Auto-Mutate</div><div class="sub">Mutate automatically based on what you consume</div></div><button class="toggle" id="sAutoMutate" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">UI scale</div></div><input type="range" id="sUi" min="80" max="140" value="100"></div>
       <div class="row"><div><div class="lbl">Reset all progress</div><div class="sub">Cannot be undone</div></div><button class="btn small ghost" id="sReset">Reset</button></div>
     </div>
   </div>
 </div>
 
-<script src="game.js?v=3"></script>
+<script src="game.js?v=4"></script>
 </body>
 </html>
