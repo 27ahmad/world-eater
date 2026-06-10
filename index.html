@@ -81,6 +81,15 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 #dashBadge .lbl{font-size:10px;font-weight:800;letter-spacing:0.08em;color:var(--dim);text-transform:uppercase}
 #dashCooldownBarWrap{width:44px;height:5px;background:#0f1722;border-radius:99px;margin-top:7px;overflow:hidden;border:1px solid rgba(255,255,255,0.05)}
 #dashCooldownBar{height:100%;width:100%;background:linear-gradient(90deg,var(--hunger),var(--hunger2));border-radius:99px;transition:width 0.1s;box-shadow:0 0 6px var(--hunger)}
+#dietBadge{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:6px 10px;backdrop-filter:blur(6px);display:flex;flex-direction:column;align-items:center;min-width:116px;height:53px;justify-content:center}
+#dietBadge .lbl{font-size:9px;font-weight:800;letter-spacing:0.08em;color:var(--dim);text-transform:uppercase;margin-bottom:3px}
+.diet-values{display:flex;gap:6px;font-size:11px;font-weight:bold;align-items:center}
+.diet-val{display:inline-flex;align-items:center;gap:2px;font-variant-numeric:tabular-nums}
+.diet-icon{display:inline-block;vertical-align:middle}
+.spin-prop{animation:propSpin 1.6s linear infinite;transform-origin:center}
+@keyframes propSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+.spin-gal{animation:galSpin 6s linear infinite;transform-origin:center}
+@keyframes galSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 #scoreBox{margin-left:auto;text-align:right;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 14px;backdrop-filter:blur(6px)}
 #scoreVal{font-size:1.5em;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.04em}
 #scoreSub{font-size:.78em;color:var(--dim)}
@@ -104,7 +113,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   filter:drop-shadow(0 0 22px rgba(0,245,212,.7))}
 #stageToast .small{letter-spacing:.4em;text-transform:uppercase;color:var(--dim);font-size:.85em;margin-bottom:4px}
 @keyframes evoPop{0%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1.08)}20%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:scale(1.04) translateY(-12px)}}
-#toasts{position:absolute;right:12px;bottom:max(14px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+#toasts{position:absolute;right:12px;bottom:max(86px,calc(env(safe-area-inset-bottom) + 78px));display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .toast{background:var(--panel-solid);border:1px solid var(--line);border-left:3px solid var(--food);border-radius:12px;
   padding:10px 14px;font-size:.92em;max-width:260px;text-align:left;animation:toastIn .25s ease, toastOut .4s ease 3.6s forwards;box-shadow:0 6px 20px rgba(0,0,0,.5)}
 .toast b{color:var(--food)}
@@ -150,14 +159,21 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 #victoryScreen h1.title-display{background:linear-gradient(180deg,#fff,var(--food) 70%);-webkit-background-clip:text;background-clip:text}
 
 /* ---------- shop / achievements ---------- */
-.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
-.shop-item{background:#111c24;border:1px solid var(--line);border-radius:14px;padding:12px 10px;text-align:center;position:relative;transition:border-color .15s}
-.shop-item .sw{width:34px;height:34px;border-radius:50%;margin:0 auto 8px;box-shadow:0 0 14px currentColor}
-.shop-item .nm{font-size:12.5px;font-weight:700;margin-bottom:2px}
-.shop-item .ds{font-size:11px;color:var(--dim);min-height:28px}
-.shop-item .price{margin-top:8px}
-.shop-item.owned{border-color:#2c5c34}
-.shop-item.equipped{border-color:var(--food);box-shadow:0 0 14px rgba(124,255,107,.25)}
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px}
+.shop-card{background:linear-gradient(180deg,#111c24,#081017);border:1px solid var(--line);border-radius:14px;padding:14px 10px;text-align:center;position:relative;transition:all 0.15s;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:145px}
+.shop-card:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,0.45);border-color:var(--dim)}
+.shop-card.sel{border-color:var(--food) !important;box-shadow:0 0 16px rgba(124,255,107,.35) !important}
+.shop-card.t-rare{border-color:rgba(93,185,255,0.25)}
+.shop-card.t-rare:hover{border-color:#5db9ff;box-shadow:0 0 14px rgba(93,185,255,0.2)}
+.shop-card.t-epic{border-color:rgba(217,70,239,0.32);background:linear-gradient(180deg,#1c102a,#081017)}
+.shop-card.t-epic:hover{border-color:#d946ef;box-shadow:0 0 18px rgba(217,70,239,0.3)}
+.shop-card.t-legendary{border-color:rgba(255,154,61,0.42);background:linear-gradient(180deg,#2b1c10,#081017);animation:shopGlint 3s infinite alternate}
+.shop-card.t-legendary:hover{border-color:var(--warn);box-shadow:0 0 22px rgba(255,154,61,0.45)}
+@keyframes shopGlint{0%{box-shadow:0 0 4px rgba(255,154,61,0.05)}100%{box-shadow:0 0 14px rgba(255,154,61,0.22)}}
+.skin-bubble{width:32px;height:32px;border-radius:50%;margin:0 auto 8px;position:relative;display:flex;align-items:center;justify-content:center;transition:transform 0.15s;border:1px solid rgba(0,0,0,0.2)}
+.skin-pupil{width:8px;height:8px;border-radius:50%;background:#1a0d1f;position:absolute;right:6px;top:12px}
+.skin-bubble::after{content:"";width:3px;height:3px;border-radius:50%;background:#fff;position:absolute;right:7px;top:10px}
+.trail-bubble,.perk-bubble{width:32px;height:32px;border-radius:50%;margin:0 auto 8px;display:flex;align-items:center;justify-content:center}
 .shop-item button{margin-top:6px;width:100%}
 .ach{display:flex;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--line);opacity:.45}
 .ach.done{opacity:1}
@@ -177,8 +193,12 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 .world-card .price{margin-top:8px}
 
 @media (max-width:600px){
-  #evoBadge{min-width:128px;padding:7px 10px}
-  #scoreBox{padding:7px 10px}
+  #evoBadge{min-width:116px;padding:7px 8px;font-size:0.9em}
+  #dashBadge{min-width:50px;padding:7px 6px;height:51px}
+  #dietBadge{min-width:86px;padding:5px 6px;height:51px}
+  .diet-values{gap:3px;font-size:9.5px}
+  #hudAutoMutateTog{font-size:7px !important;padding:1px 4px !important;margin-top:2px !important}
+  #scoreBox{padding:7px 8px;font-size:0.9em}
   #upgradeCards{flex-direction:column;align-items:center}
   .upCard{width:min(320px,88vw);max-width:none;min-height:0}
   .upCard .ds{min-height:0}
@@ -220,6 +240,16 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
       <div class="lbl">DASH</div>
       <div id="dashCooldownBarWrap"><div id="dashCooldownBar"></div></div>
     </div>
+    <div id="dietBadge">
+      <div class="lbl">DIET</div>
+      <div class="diet-values">
+        <span class="diet-val" id="dietBlob" title="Organic (Bio upgrades)"></span>
+        <span class="diet-val" id="dietRect" title="Structural (Fortification)"></span>
+        <span class="diet-val" id="dietPoly" title="Kinetic (Speed/Attract)"></span>
+        <span class="diet-val" id="dietGlow" title="Cosmic (Gravity/Pulse)"></span>
+      </div>
+      <button id="hudAutoMutateTog" style="margin-top:4px; font-size:8px; font-weight:800; color:var(--dim); border:1px solid var(--line); border-radius:4px; padding:2px 6px; cursor:pointer; pointer-events:auto; transition:all 0.15s">AUTO: OFF</button>
+    </div>
     <div id="scoreBox">
       <div id="scoreVal">0</div>
       <div id="scoreSub">SCORE</div>
@@ -230,9 +260,9 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <div id="bossWrap"><div id="bossName">MILITARY TITAN</div><div id="bossHpWrap"><div id="bossHpBar"></div></div></div>
   <div id="stageToast"><div class="small" id="stageToastScale">Evolution</div><div class="big" id="stageToastName">RAVENOUS MITE</div></div>
   <div id="toasts"></div>
-  <div id="hint">Drag or move mouse &middot; devour everything smaller than you</div>
+  <div id="hint">Drag or move mouse &middot; devour everything smaller &middot; Shift / double-tap to dash</div>
   <div id="mutationPromptWrap" class="hidden" style="position:absolute;bottom:max(24px,env(safe-area-inset-bottom) + 12px);left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:auto;z-index:25">
-    <button id="mutationPrompt" style="background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">🧬 MUTATE NOW (Space)</button>
+    <button id="mutationPrompt" style="background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">MUTATE NOW (Space)</button>
     <button id="autoMutateTog" style="background:rgba(255,255,255,0.06);border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:10px 14px;font-weight:bold;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;transition:all 0.15s">Auto: Off</button>
   </div>
 </div>
@@ -250,13 +280,14 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
       <button class="mode-tab" data-mode="rush" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s; color:var(--dim)">Rush</button>
       <button class="mode-tab" data-mode="zen" style="flex:1; padding:8px; border-radius:9px; font-size:11px; font-weight:800; text-transform:uppercase; transition:all 0.15s; color:var(--dim)">Zen</button>
     </div>
+    <div id="modeDesc" style="font-size:11px; color:var(--dim); margin-top:8px; min-height:15px; text-align:center; letter-spacing:0.03em">Grow from a mote to the universe. Devour the final boss to win.</div>
   </div>
   <div class="menu-stack">
     <button class="btn primary" id="playBtn">DEVOUR</button>
-    <button class="btn" id="worldsBtn">&#127757; Worlds</button>
-    <button class="btn" id="shopBtn">&#129516; Evolution Lab</button>
-    <button class="btn ghost" id="achBtn">&#127942; Achievements</button>
-    <button class="btn ghost" id="settingsBtn">&#9881;&#65039; Settings</button>
+    <button class="btn" id="worldsBtn"><svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; margin-right:4px"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg> Worlds</button>
+    <button class="btn" id="shopBtn"><svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; margin-right:4px"><path d="M4.5 10.5C4.5 5 12 5 12 12s7.5 7 7.5 1.5M19.5 10.5C19.5 5 12 5 12 12S4.5 19 4.5 13.5"></path></svg> Evolution Lab</button>
+    <button class="btn ghost" id="achBtn"><svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; margin-right:4px"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34M12 2a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path></svg> Achievements</button>
+    <button class="btn ghost" id="settingsBtn"><svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round; margin-right:4px"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Settings</button>
   </div>
   <div id="bestLine" style="margin-top:22px;color:var(--dim);font-size:13px;letter-spacing:.1em"></div>
 </div>
@@ -327,12 +358,31 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
     <header><h2>Evolution Lab</h2>
       <div style="display:flex;gap:10px;align-items:center"><span class="essence-chip" id="essenceShop">0</span>
       <button class="btn small ghost close-btn" data-close="shopScreen">&#10005;</button></div></header>
+    <div id="shopPreview" style="display:flex; background:rgba(255,255,255,0.02); border-bottom:1px solid var(--line); height:110px; align-items:center; padding:10px 18px; gap:14px">
+      <canvas id="shopPreviewCanvas" width="90" height="90" style="background:#090d16; border:1px solid var(--line); border-radius:12px; flex:none"></canvas>
+      <div style="flex:1; min-width:0; text-align:left">
+        <div id="previewName" style="font-weight:900; font-size:16px; letter-spacing:0.05em; text-transform:uppercase; color:var(--hunger)">Select an Item</div>
+        <div id="previewDesc" style="font-size:12px; color:var(--dim); margin-top:4px; line-height:1.4">Select an item below to preview skins and trails.</div>
+        <div id="previewTier" style="margin-top:6px; font-size:9px; font-weight:800; letter-spacing:0.15em; text-transform:uppercase; display:inline-block; padding:2px 8px; border-radius:4px; background:rgba(255,255,255,0.05); color:var(--dim)">Common</div>
+      </div>
+    </div>
     <div class="tabs">
       <button class="tab active" data-shoptab="skins">Skins</button>
       <button class="tab" data-shoptab="trails">Trails</button>
       <button class="tab" data-shoptab="perks">Perks</button>
     </div>
-    <div class="body"><div class="shop-grid" id="shopGrid"></div></div>
+    <div class="body">
+      <!-- FLUX DEAL -->
+      <div id="shopDealContainer" style="display:none; background:linear-gradient(90deg, rgba(255,154,61,0.08), rgba(255,77,94,0.08)); border:1px solid rgba(255,154,61,0.25); border-radius:12px; margin-bottom:14px; padding:10px 14px; align-items:center; justify-content:space-between; gap:12px">
+        <div style="flex:1; text-align:left">
+          <div style="font-size:10px; font-weight:800; letter-spacing:0.15em; color:var(--warn); text-transform:uppercase">⚡ FLUX SPECIAL OFFER</div>
+          <div id="shopDealTitle" style="font-weight:900; font-size:14px; margin-top:2px; text-transform:uppercase"></div>
+          <div id="shopDealTimer" style="font-size:10px; color:var(--dim); margin-top:2px; font-variant-numeric:tabular-nums"></div>
+        </div>
+        <button id="shopDealBuyBtn" class="btn small primary" style="min-height:36px; padding:6px 14px; font-size:13px; font-weight:800; background:linear-gradient(180deg, var(--warn), #d05a00); border-color:#ffe89a; border-radius:9px; box-shadow:0 0 10px rgba(255,154,61,0.2); pointer-events:auto">BUY</button>
+      </div>
+      <div class="shop-grid" id="shopGrid"></div>
+    </div>
   </div>
 </div>
 
@@ -365,6 +415,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   </div>
 </div>
 
-<script src="game.js"></script>
+<script src="game.js?v=2"></script>
 </body>
 </html>
