@@ -47,7 +47,7 @@ const Save = (() => {
       owned: { skin_void: true, trail_none: true }, equippedSkin: "skin_void", equippedTrail: "trail_none",
       perks: {}, ach: {}, worlds: { city: true }, world: "city",
       dealId: null, dealExpires: 0,
-      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false, autoMutate: false }
+      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false }
     };
   }
   function load() {
@@ -225,7 +225,7 @@ const UPGRADES = [
   U("colossus","🦖","Colossus Gene","Instantly grow 20%","legend",s=>s.instaGrow=1.2,2),
   U("echo","📡","Echo Pulse","Shockwaves are 50% larger","rare",s=>s.shockSize*=1.5,3),
   U("vampiric","🧛","Vampiric Maw","Boss bites heal 3 HP","rare",s=>s.bossHeal+=3,3),
-  U("cosmicluck","🎰","Cosmic Luck","Upgrade choices get +1 option","legend",s=>s.choices=4,1),
+  U("cosmicluck","🎰","Cosmic Luck","Auto-mutation weighs an extra option","legend",s=>s.choices+=1,1),
   U("afterburn","☄️","Afterburner","Leave a damaging wake that pops small prey","epic",s=>s.afterburn=true,1),
   U("zenith","🌠","Zenith","+15% to speed, XP, growth and score","legend",s=>{s.speed*=1.15;s.xpMult*=1.15;s.growMult*=1.15;s.scoreMult*=1.15;},1)
 ];
@@ -290,7 +290,7 @@ const SHOP = [];
     ["perk_brain","Hungry Mind","+10% XP forever",180,"#ff7ad0"],
     ["perk_heart","Big Heart","+20 starting max HP",160,"#ff4d5e"],
     ["perk_greed","Essence Nose","+15% essence from runs",200,"#7cff6b"],
-    ["perk_reroll","Reroll Gland","Reroll button on upgrade picks",260,"#ffd04a"],
+    ["perk_reroll","Reroll Gland","Auto-mutation weighs 2 extra options",260,"#ffd04a"],
     ["perk_revive","Stubborn Cells","Start each run with Guardian Angel",420,"#e8e8ff"],
     ["perk_combo","Sticky Combo","Combos last +0.5s",180,"#3affd0"],
     ["perk_boss","Boss Hunter","+20% damage to bosses",220,"#ff6a3a"],
@@ -875,13 +875,13 @@ function resize() {
 window.addEventListener("resize", resize);
 
 const G = {
-  state: "menu", // menu | play | upgrade | pause | over | victory
+  state: "menu", // menu | play | pause | over | victory
   player: null, objs: [], shots: [], boss: null,
   evoIndex: 0, level: 1, xp: 0, xpNeed: 14,
   score: 0, combo: 0, comboT: 0, bestCombo: 0,
   eaten: 0, time: 0, world: WORLDS[0],
   stats: null, run: null, lastSpawn: 0, ambient: [],
-  pendingChoices: null, victoryCore: null, slowmo: 1
+  victoryCore: null, slowmo: 1
 };
 
 const INPUT = { x: 0, y: 0, active: false };
@@ -944,7 +944,7 @@ function newRunStats() {
     bossDmg: 1, evoSpeed: 0, thorns: 0, dashEvery: 0, iframes: 1.0, shardChance: 0, shardValue: 1,
     evoHeal: false, enemyShards: 1, hitstopMult: 1, zoomOut: 1, rageOnHit: false, feastGrow: false,
     undertow: false, xpNeedMult: 1, chainBite: 0, cheatDeath: 0, timeSlow: 1, choices: 3,
-    afterburn: false, bossHeal: 0, heal: 0, instaGrow: 0, legendOdds: 1, essenceMult: 1, rerolls: 0
+    afterburn: false, bossHeal: 0, heal: 0, instaGrow: 0, legendOdds: 1, essenceMult: 1
   };
   const pk = id => P.owned[id];
   if (pk("perk_legs")) s.speed *= 1.08;
@@ -959,7 +959,7 @@ function newRunStats() {
   if (pk("perk_magnet2")) s.magnet *= 1.15;
   if (pk("perk_growth")) s.growMult *= 1.08;
   if (pk("perk_revive")) s.cheatDeath = 1;
-  if (pk("perk_reroll")) s.rerolls = 99;
+  if (pk("perk_reroll")) s.choices += 2;
   s.hp = s.maxHp;
   return s;
 }
@@ -973,14 +973,14 @@ function startRun() {
   G.endlessCycle = 0;
   G.stats = newRunStats();
 
+  let startMutations = 0;
   if (G.mode === "rush") {
     G.evoIndex = 10;
     G.level = 10;
-    G.pendingMutations = 5;
+    startMutations = 5;
   } else {
     G.evoIndex = 0;
     G.level = 1;
-    G.pendingMutations = 0;
   }
 
   const startR = EVOR[G.evoIndex] * (P.owned["perk_head"] ? 1.15 : 1);
@@ -996,7 +996,7 @@ function startRun() {
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
   G.eaten = 0; G.time = 0; G.slowmo = 1; G.upCount = 0;
   if (P.owned["perk_start2"] && G.mode !== "rush") {
-    G.pendingMutations = 1;
+    startMutations = 1;
     G.level = 2;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   }
@@ -1004,10 +1004,11 @@ function startRun() {
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
-  show("hud"); hideAll(["menuScreen","pauseScreen","upgradeScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen"]);
+  show("hud"); hideAll(["menuScreen","pauseScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen"]);
   $("hint").style.display = "";
   setTimeout(() => { $("hint").style.display = "none"; }, 6000);
   G.state = "play";
+  for (let i = 0; i < startMutations; i++) autoMutateOne();
   checkBossSpawn();
   refreshHud(true);
 }
@@ -1173,16 +1174,13 @@ function addXp(v) {
       // every mutation is maxed — convert further levels into a heal + score surge
       G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.maxHp * 0.25);
       addScore(G.level * 25, G.player.x, G.player.y - G.player.r * 1.3);
-    } else if (P.settings.autoMutate) {
-      autoMutateOne();
     } else {
-      G.pendingMutations = (G.pendingMutations || 0) + 1;
+      autoMutateOne(); // mutations are picked automatically from your diet
     }
   }
-  if (leveled && !P.settings.autoMutate) {
+  if (leveled) {
     SFX.levelup();
     FX.ring(G.player.x, G.player.y, G.player.r * 4, "#7cff6b", 4);
-    if (G.pendingMutations > 0) toast("Evolved to level " + G.level + "! Press Space to Mutate");
   }
 }
 function growBy(amount) {
@@ -1321,69 +1319,6 @@ function rollChoices() {
   }
   return picks;
 }
-function openMutationScreen() {
-  const choices = rollChoices();
-  if (!choices.length) { G.pendingMutations = 0; updateMutationPrompt(); return; }
-  SFX.levelup();
-  G.state = "upgrade";
-  G.pendingChoices = choices;
-  renderUpgradeCards();
-  show("upgradeScreen");
-  updateMutationPrompt();
-}
-function triggerReroll() {
-  if (G.stats.rerolls > 0) {
-    SFX.ui();
-    G.pendingChoices = rollChoices();
-    renderUpgradeCards();
-  }
-}
-function renderUpgradeCards() {
-  $("upgradeLvl").textContent = "LEVEL " + G.level;
-  const wrap = $("upgradeCards");
-  wrap.innerHTML = "";
-  G.pendingChoices.forEach((u, idx) => {
-    const lvl = (runUpgradeCounts[u.id] || 0) + 1;
-    const card = document.createElement("button");
-    card.className = "upCard" + (u.rarity === "legend" ? " legend" : "");
-    card.style.position = "relative";
-    
-    // Add visual keyboard hotkey hint
-    const keyHint = '<span style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.45);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:10px;font-weight:bold;color:var(--dim)">' + (idx + 1) + '</span>';
-    
-    const category = UPGRADE_DIETS[u.id] || "blob";
-    let catText = "Organic";
-    let catColor = "#00f5a0";
-    if (category === "rect") { catText = "Structural"; catColor = "#ff9a3d"; }
-    else if (category === "poly") { catText = "Kinetic"; catColor = "#00bbf9"; }
-    else if (category === "glow") { catText = "Cosmic"; catColor = "#d946ef"; }
-    
-    const svgIcon = getDietSvg(category, catColor);
-    
-    card.innerHTML = keyHint + 
-      '<div class="icon" style="margin-top:12px; margin-bottom:10px; display:flex; justify-content:center">' + 
-        `<div style="transform:scale(2); width:15px; height:15px">${svgIcon}</div>` + 
-      '</div>' +
-      '<div class="nm" style="font-weight:800; font-size:15px; margin-bottom:4px">' + u.name + (u.max > 1 ? ' <span style="color:var(--dim);font-size:11px">Lv' + lvl + "</span>" : "") + '</div>' +
-      '<div class="ds" style="font-size:13px; color:var(--dim); line-height:1.45; min-height:38px; margin-bottom:8px">' + u.desc + '</div>' + 
-      '<div style="font-size:10px; font-weight:800; color:' + catColor + '; margin-bottom:12px; letter-spacing:0.05em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:4px">' + 
-        svgIcon + '<span>' + catText + '</span>' + 
-      '</div>' +
-      '<div class="rarity r-' + u.rarity + '">' + u.rarity + "</div>";
-      
-    card.onclick = () => pickUpgrade(u);
-    wrap.appendChild(card);
-  });
-  if (G.stats.rerolls > 0) {
-    const rr = document.createElement("button");
-    rr.className = "btn ghost small";
-    rr.style.marginTop = "14px";
-    rr.textContent = "Reroll [R]";
-    rr.onclick = triggerReroll;
-    wrap.appendChild(rr);
-  }
-}
-
 function checkFusions() {
   if (!G.fusions) G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false };
   
@@ -1410,36 +1345,6 @@ function triggerFusionUnlock(title, desc) {
   FX.flash = 0.6;
   if (G.player) FX.ring(G.player.x, G.player.y, G.player.r * 4, "#00f5d4", 6);
   toast("<b>FUSION UNLOCKED: " + title + "</b><br>" + desc);
-}
-
-function pickUpgrade(u) {
-  SFX.pick();
-  runUpgradeCounts[u.id] = (runUpgradeCounts[u.id] || 0) + 1;
-  checkFusions();
-  const s = G.stats;
-  const beforeMax = s.maxHp;
-  u.apply(s);
-  if (s.heal) { s.hp = Math.min(s.maxHp, s.hp + s.heal + (s.maxHp - beforeMax)); s.heal = 0; }
-  if (s.instaGrow) { G.player.targetR *= s.instaGrow; s.instaGrow = 0; }
-  if (u.rarity === "legend") G.run.legendPicked = true;
-  P.totalUpgrades++; G.upCount++;
-  saveP();
-  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#c8a6ff", 1.1);
-  checkAch();
-
-  G.pendingMutations = Math.max(0, G.pendingMutations - 1);
-
-  const next = G.pendingMutations > 0 ? rollChoices() : [];
-  if (next.length) {
-    SFX.levelup();
-    G.pendingChoices = next;
-    renderUpgradeCards();
-  } else {
-    G.pendingMutations = 0;
-    hide("upgradeScreen");
-    G.state = "play";
-    updateMutationPrompt();
-  }
 }
 
 function checkBossSpawn() {
@@ -1477,7 +1382,7 @@ function checkBossSpawn() {
 
 function autoMutateOne() {
   const choices = rollChoices();
-  if (!choices || !choices.length) { G.pendingMutations = 0; return; }
+  if (!choices || !choices.length) return;
   let bestChoice = choices[0];
   let bestScore = -1;
   choices.forEach(u => {
@@ -1506,8 +1411,9 @@ function pickUpgradeQuiet(u) {
   saveP();
   SFX.pick();
   FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#7cff6b", 1.25);
-  G.pendingMutations = Math.max(0, G.pendingMutations - 1);
-  updateMutationPrompt();
+  if (u.rarity === "legend" || u.rarity === "epic") {
+    toast("🧬 Mutated: <b>" + u.name + "</b><br>" + u.desc);
+  }
   checkAch();
 }
 
@@ -1652,31 +1558,6 @@ function buildAmbient() {
   }
 }
 
-let lastPromptState = null;
-function updateMutationPrompt() {
-  const wrap = $("mutationPromptWrap");
-  if (!wrap) return;
-  
-  const shouldShow = (typeof G !== "undefined" && G && G.state === "play" && G.pendingMutations > 0);
-  const count = shouldShow ? G.pendingMutations : 0;
-  const cacheKey = shouldShow + "_" + count + "_" + (P.settings.autoMutate ? "auto" : "manual");
-  
-  if (cacheKey === lastPromptState) return;
-  lastPromptState = cacheKey;
-  
-  if (shouldShow) {
-    if (P.settings.autoMutate) {
-      while (G.pendingMutations > 0) autoMutateOne();
-      return;
-    }
-    const p = $("mutationPrompt");
-    if (p) p.textContent = "MUTATE NOW x" + count + " (Space)";
-    wrap.classList.remove("hidden");
-  } else {
-    wrap.classList.add("hidden");
-  }
-}
-
 /* ---------------- HUD refresh ---------------- */
 let hudTick = 0;
 function refreshHud(force) {
@@ -1712,17 +1593,6 @@ function refreshHud(force) {
   const dr = $("dietRect"); if (dr) dr.innerHTML = getDietSvg("structural", "#ff9a3d") + " " + (G.run && G.run.diet ? G.run.diet.rect || 0 : 0);
   const dp = $("dietPoly"); if (dp) dp.innerHTML = getDietSvg("kinetic", "#00bbf9") + " " + (G.run && G.run.diet ? G.run.diet.poly || 0 : 0);
   const dg = $("dietGlow"); if (dg) dg.innerHTML = getDietSvg("cosmic", "#d946ef") + " " + (G.run && G.run.diet ? G.run.diet.glow || 0 : 0);
-  const hudAt = $("hudAutoMutateTog");
-  if (hudAt) {
-    const active = !!P.settings.autoMutate;
-    hudAt.textContent = "AUTO: " + (active ? "ON" : "OFF");
-    hudAt.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
-    hudAt.style.borderColor = active ? "var(--food)" : "var(--line)";
-    hudAt.style.color = active ? "var(--food)" : "var(--dim)";
-    hudAt.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
-  }
-  
-  updateMutationPrompt();
 }
 
 /* ============================================================
@@ -1739,19 +1609,6 @@ window.addEventListener("keydown", e => {
     saveP();
     toast(P.settings.muted ? "Sound Muted" : "Sound Unmuted");
     return;
-  }
-  
-  // Upgrade Screen Shortcuts
-  if (G.state === "upgrade" && G.pendingChoices) {
-    const num = parseInt(e.key);
-    if (num >= 1 && num <= G.pendingChoices.length) {
-      pickUpgrade(G.pendingChoices[num - 1]);
-      return;
-    }
-    if (e.key && e.key.toLowerCase() === "r" && G.stats.rerolls > 0) {
-      triggerReroll();
-      return;
-    }
   }
   
   // Game Over Screen Shortcuts
@@ -1796,15 +1653,8 @@ window.addEventListener("keydown", e => {
     }
   }
   
-  // Trigger mutation from gameplay
-  if (G.state === "play" && e.key === " " && G.pendingMutations > 0) {
-    e.preventDefault();
-    openMutationScreen();
-    return;
-  }
-  
   // Trigger manual dash
-  if (G.state === "play" && (e.key === "Shift" || (e.key && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "e")))) {
+  if (G.state === "play" && (e.key === " " || e.key === "Shift" || (e.key && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "e")))) {
     e.preventDefault();
     triggerManualDash();
     return;
@@ -2180,7 +2030,7 @@ function mod(n, m) { return ((n % m) + m) % m; }
 
 function render() {
   const c = ctx2d, p = G.player;
-  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "upgrade" || G.state === "over" || G.state === "victory");
+  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "over" || G.state === "victory");
   const t = performance.now() / 1000;
   const band = bandFor(playing ? G.evoIndex : 0);
   /* background gradient: world tint at small scale -> cosmic at large */
@@ -2620,31 +2470,6 @@ function buildAchList() {
 }
 
 /* ---------------- settings wiring ---------------- */
-function syncAutoMutateUI() {
-  const active = !!P.settings.autoMutate;
-  const btn = $("autoMutateTog");
-  if (btn) {
-    btn.textContent = "Auto: " + (active ? "On" : "Off");
-    btn.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
-    btn.style.borderColor = active ? "var(--food)" : "var(--line)";
-    btn.style.color = active ? "var(--food)" : "var(--dim)";
-    btn.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
-  }
-  const hudAt = $("hudAutoMutateTog");
-  if (hudAt) {
-    hudAt.textContent = "AUTO: " + (active ? "ON" : "OFF");
-    hudAt.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
-    hudAt.style.borderColor = active ? "var(--food)" : "var(--line)";
-    hudAt.style.color = active ? "var(--food)" : "var(--dim)";
-    hudAt.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
-  }
-  const sBtn = $("sAutoMutate");
-  if (sBtn) {
-    sBtn.classList.toggle("on", active);
-    sBtn.setAttribute("aria-checked", active);
-  }
-}
-
 function applySettingsToUI() {
   $("sMaster").value = P.settings.master;
   $("sMusic").value = P.settings.music;
@@ -2654,7 +2479,6 @@ function applySettingsToUI() {
   $("sReduced").classList.toggle("on", P.settings.reduced);
   $("sPerf").classList.toggle("on", P.settings.perf);
   $("sCb").classList.toggle("on", P.settings.cb);
-  syncAutoMutateUI();
   document.documentElement.style.setProperty("--ui-scale", P.settings.ui / 100);
 }
 function bindSettings() {
@@ -2665,12 +2489,6 @@ function bindSettings() {
   tog("sReduced", "reduced");
   tog("sPerf", "perf", resize);
   tog("sCb", "cb");
-  tog("sAutoMutate", "autoMutate", () => {
-    syncAutoMutateUI();
-    if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
-      while (G.pendingMutations > 0) autoMutateOne();
-    }
-  });
   let armed = false;
   $("sReset").addEventListener("click", () => {
     if (!armed) { armed = true; $("sReset").textContent = "Sure?"; setTimeout(() => { armed = false; $("sReset").textContent = "Reset"; }, 2500); return; }
@@ -2726,32 +2544,6 @@ function bindUI() {
   $("vRetryBtn").onclick = () => { SFX.ui(); hide("victoryScreen"); startRun(); };
   $("vMenuBtn").onclick = () => { SFX.ui(); hide("victoryScreen"); G.state = "menu"; updateMenuChrome(); show("menuScreen"); };
   document.addEventListener("visibilitychange", () => { if (document.hidden && G.state === "play") togglePause(); });
-  $("mutationPrompt").onclick = () => {
-    if (G.state === "play" && G.pendingMutations > 0) {
-      openMutationScreen();
-    }
-  };
-  $("autoMutateTog").onclick = () => {
-    P.settings.autoMutate = !P.settings.autoMutate;
-    SFX.ui();
-    saveP();
-    syncAutoMutateUI();
-    if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
-      while (G.pendingMutations > 0) autoMutateOne();
-    }
-  };
-  const hudAt = $("hudAutoMutateTog");
-  if (hudAt) {
-    hudAt.onclick = () => {
-      P.settings.autoMutate = !P.settings.autoMutate;
-      SFX.ui();
-      saveP();
-      syncAutoMutateUI();
-      if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
-        while (G.pendingMutations > 0) autoMutateOne();
-      }
-    };
-  }
   const dealBuy = $("shopDealBuyBtn");
   if (dealBuy) {
     dealBuy.onclick = () => {
@@ -2800,7 +2592,6 @@ function frame(ts) {
     updateShopDealTimer();
     renderShopPreview();
   }
-  updateMutationPrompt();
 }
 
 function boot() {
