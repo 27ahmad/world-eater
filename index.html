@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#070710">
+<title>WORLD EATER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --void:#070710; --void2:#0d0d1c; --panel:#12122299; --panel-solid:#15152a;
+  --hunger:#c44dff; --hunger2:#ff4d9e; --food:#7cff6b; --warn:#ff9a3d; --danger:#ff4d5e;
+  --bone:#ede8f2; --dim:#8f8aa8; --line:#2a2a48;
+  --ui-scale:1;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--void);color:var(--bone);
+  font-family:"Inter","Avenir Next","Segoe UI",system-ui,-apple-system,sans-serif;touch-action:none;overscroll-behavior:none}
+#game{position:fixed;inset:0;display:block}
+button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none}
+
+/* ---------- shared UI ---------- */
+.screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(120% 90% at 50% 110%, #1c0f33 0%, var(--void) 55%);z-index:40;padding:18px;text-align:center}
+.screen.overlay{background:rgba(7,7,16,.82);backdrop-filter:blur(8px)}
+.hidden{display:none !important}
+.title-display{font-weight:800;letter-spacing:.14em;text-transform:uppercase;line-height:.95}
+h1.title-display{font-size:clamp(40px,9vw,96px);
+  background:linear-gradient(180deg,#fff 10%,var(--hunger) 55%,var(--hunger2) 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 24px rgba(196,77,255,.45));animation:titlePulse 3.2s ease-in-out infinite}
+@keyframes titlePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+.subtitle{color:var(--dim);letter-spacing:.32em;text-transform:uppercase;font-size:clamp(10px,2.4vw,14px);margin-top:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:14px 30px;border-radius:14px;font-size:17px;font-weight:700;letter-spacing:.06em;
+  background:linear-gradient(180deg,#2a1546,#1a0e2e);border:1px solid #5d2f96;color:var(--bone);
+  box-shadow:0 4px 18px rgba(196,77,255,.25), inset 0 1px 0 rgba(255,255,255,.08);
+  transition:transform .12s ease, box-shadow .12s ease, filter .12s ease;min-height:48px}
+.btn:hover{transform:translateY(-2px);filter:brightness(1.15);box-shadow:0 8px 26px rgba(196,77,255,.4)}
+.btn:active{transform:translateY(1px) scale(.98)}
+.btn.primary{background:linear-gradient(180deg,var(--hunger),#7a1fb8);border-color:#e2a6ff;font-size:20px;padding:16px 44px}
+.btn.small{padding:9px 16px;font-size:14px;border-radius:10px;min-height:40px}
+.btn.ghost{background:rgba(255,255,255,.04);border-color:var(--line);box-shadow:none}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.menu-stack{display:flex;flex-direction:column;gap:12px;margin-top:30px;width:min(320px,86vw)}
+.menu-stack .btn{width:100%}
+.essence-chip{display:inline-flex;align-items:center;gap:7px;background:rgba(124,255,107,.08);
+  border:1px solid rgba(124,255,107,.35);border-radius:999px;padding:6px 16px;color:var(--food);font-weight:700;font-size:15px}
+.essence-chip::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--food);box-shadow:0 0 10px var(--food)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(10px);
+  width:min(560px,94vw);max-height:min(78vh,720px);display:flex;flex-direction:column;overflow:hidden}
+.panel header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.panel header h2{font-size:18px;letter-spacing:.18em;text-transform:uppercase;font-weight:800}
+.panel .body{overflow-y:auto;padding:16px 18px;text-align:left;-webkit-overflow-scrolling:touch}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 4px;border-bottom:1px solid #1d1d34}
+.row:last-child{border-bottom:none}
+.row .lbl{font-size:15px;font-weight:600}
+.row .sub{font-size:12px;color:var(--dim);margin-top:2px}
+input[type=range]{width:140px;accent-color:var(--hunger)}
+.toggle{width:52px;height:28px;border-radius:99px;background:#23233d;border:1px solid var(--line);position:relative;transition:background .15s}
+.toggle::after{content:"";position:absolute;top:2px;left:3px;width:22px;height:22px;border-radius:50%;background:#777;transition:all .15s}
+.toggle.on{background:#3d1a64;border-color:var(--hunger)}
+.toggle.on::after{left:25px;background:var(--hunger);box-shadow:0 0 8px var(--hunger)}
+.tabs{display:flex;gap:6px;padding:10px 14px 0}
+.tab{flex:1;padding:9px;border-radius:10px 10px 0 0;background:transparent;color:var(--dim);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+.tab.active{background:rgba(196,77,255,.12);color:var(--bone);border-bottom:2px solid var(--hunger)}
+
+/* ---------- HUD ---------- */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:20;transform-origin:top left;font-size:calc(14px*var(--ui-scale))}
+#hudTop{position:absolute;top:max(10px,env(safe-area-inset-top));left:12px;right:12px;display:flex;align-items:flex-start;gap:10px}
+#evoBadge{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 14px;backdrop-filter:blur(6px);min-width:170px}
+#evoName{font-weight:800;letter-spacing:.1em;text-transform:uppercase;font-size:1em;color:var(--hunger);text-shadow:0 0 12px rgba(196,77,255,.6)}
+#sizeLabel{font-size:.82em;color:var(--dim);margin-top:1px;font-variant-numeric:tabular-nums}
+#xpWrap{height:7px;background:#1b1b30;border-radius:99px;margin-top:7px;overflow:hidden}
+#xpBar{height:100%;width:0%;background:linear-gradient(90deg,var(--hunger),var(--hunger2));border-radius:99px;transition:width .15s;box-shadow:0 0 8px rgba(196,77,255,.7)}
+#hpWrap{height:6px;background:#301420;border-radius:99px;margin-top:5px;overflow:hidden}
+#hpBar{height:100%;width:100%;background:linear-gradient(90deg,#ff4d5e,#ff9a3d);border-radius:99px;transition:width .12s}
+#scoreBox{margin-left:auto;text-align:right;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 14px;backdrop-filter:blur(6px)}
+#scoreVal{font-size:1.5em;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+#scoreSub{font-size:.78em;color:var(--dim)}
+#pauseBtn{pointer-events:auto;width:44px;height:44px;border-radius:12px;background:var(--panel);border:1px solid var(--line);
+  font-size:18px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+#comboBox{position:absolute;top:24%;left:50%;transform:translateX(-50%);text-align:center;opacity:0;transition:opacity .2s}
+#comboBox.show{opacity:1}
+#comboNum{font-size:2.6em;font-weight:900;letter-spacing:.06em;color:var(--food);text-shadow:0 0 18px rgba(124,255,107,.8);font-variant-numeric:tabular-nums}
+#comboNum.hot{color:var(--warn);text-shadow:0 0 22px rgba(255,154,61,.9)}
+#comboLbl{font-size:.8em;letter-spacing:.4em;text-transform:uppercase;color:var(--dim)}
+#comboTimer{width:90px;height:4px;background:#1b1b30;border-radius:99px;margin:6px auto 0;overflow:hidden}
+#comboTimerBar{height:100%;background:var(--food);border-radius:99px}
+#bossWrap{position:absolute;left:50%;transform:translateX(-50%);bottom:max(86px,calc(env(safe-area-inset-bottom) + 78px));width:min(420px,80vw);display:none}
+#bossName{text-align:center;font-weight:800;letter-spacing:.22em;text-transform:uppercase;font-size:.95em;color:var(--danger);text-shadow:0 0 14px rgba(255,77,94,.7);margin-bottom:5px}
+#bossHpWrap{height:10px;background:#2a0d14;border:1px solid #571623;border-radius:99px;overflow:hidden}
+#bossHpBar{height:100%;width:100%;background:linear-gradient(90deg,#ff4d5e,#ff9a3d);border-radius:99px;transition:width .1s}
+#stageToast{position:absolute;top:38%;left:0;right:0;text-align:center;pointer-events:none;opacity:0}
+#stageToast.show{animation:evoPop 2.4s ease forwards}
+#stageToast .big{font-size:2.4em;font-weight:900;letter-spacing:.18em;text-transform:uppercase;
+  background:linear-gradient(180deg,#fff,var(--hunger2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 22px rgba(255,77,158,.7))}
+#stageToast .small{letter-spacing:.4em;text-transform:uppercase;color:var(--dim);font-size:.85em;margin-bottom:4px}
+@keyframes evoPop{0%{opacity:0;transform:scale(.6)}12%{opacity:1;transform:scale(1.08)}20%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:scale(1.04) translateY(-12px)}}
+#toasts{position:absolute;right:12px;bottom:max(14px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.toast{background:var(--panel-solid);border:1px solid var(--line);border-left:3px solid var(--food);border-radius:12px;
+  padding:10px 14px;font-size:.92em;max-width:260px;text-align:left;animation:toastIn .25s ease, toastOut .4s ease 3.6s forwards;box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.toast b{color:var(--food)}
+@keyframes toastIn{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateX(30px)}}
+#hint{position:absolute;bottom:max(20px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:var(--dim);
+  font-size:.95em;letter-spacing:.12em;text-transform:uppercase;animation:hintFade 2s ease-in-out infinite alternate}
+@keyframes hintFade{from{opacity:.4}to{opacity:.95}}
+#vignette{position:fixed;inset:0;pointer-events:none;z-index:15;box-shadow:inset 0 0 140px rgba(0,0,0,.55);transition:box-shadow .3s}
+#dmgFlash{position:fixed;inset:0;pointer-events:none;z-index:16;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,40,60,.45));opacity:0}
+#evoFlash{position:fixed;inset:0;pointer-events:none;z-index:30;background:#fff;opacity:0}
+
+/* ---------- upgrade modal ---------- */
+#upgradeScreen{z-index:45}
+#upgradeScreen h2{font-size:clamp(20px,4.6vw,30px);letter-spacing:.22em;text-transform:uppercase;font-weight:900;margin-bottom:4px;
+  color:var(--food);text-shadow:0 0 18px rgba(124,255,107,.5)}
+#upgradeScreen .lvl{color:var(--dim);letter-spacing:.3em;text-transform:uppercase;font-size:12px;margin-bottom:22px}
+#upgradeCards{display:flex;gap:14px;width:min(880px,94vw);justify-content:center;flex-wrap:wrap}
+.upCard{flex:1 1 200px;max-width:270px;min-width:180px;background:linear-gradient(180deg,#191930,#101020);
+  border:1px solid var(--line);border-radius:16px;padding:20px 16px;text-align:center;
+  transition:transform .15s, border-color .15s, box-shadow .15s;animation:cardIn .35s cubic-bezier(.2,1.4,.4,1) backwards}
+.upCard:nth-child(2){animation-delay:.07s}.upCard:nth-child(3){animation-delay:.14s}
+@keyframes cardIn{from{opacity:0;transform:translateY(26px) scale(.92)}}
+.upCard:hover{transform:translateY(-5px);border-color:var(--hunger);box-shadow:0 10px 30px rgba(196,77,255,.3)}
+.upCard .icon{font-size:36px;margin-bottom:10px;filter:drop-shadow(0 0 10px rgba(196,77,255,.5))}
+.upCard .nm{font-weight:800;letter-spacing:.08em;text-transform:uppercase;font-size:15px;margin-bottom:6px}
+.upCard .ds{font-size:13px;color:var(--dim);line-height:1.45;min-height:38px}
+.upCard .rarity{display:inline-block;margin-top:10px;font-size:10px;letter-spacing:.24em;text-transform:uppercase;
+  padding:3px 10px;border-radius:99px;border:1px solid}
+.r-common{color:#9aa;border-color:#445}
+.r-rare{color:#5db9ff;border-color:#2a6da3}
+.r-epic{color:var(--hunger);border-color:#6e2fa0}
+.r-legend{color:var(--warn);border-color:#a35e1f;text-shadow:0 0 8px rgba(255,154,61,.6)}
+.upCard.legend{border-color:#a35e1f;box-shadow:0 0 24px rgba(255,154,61,.18)}
+
+/* ---------- end screens ---------- */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;width:min(520px,92vw);margin:22px 0}
+.stat-cell{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 8px}
+.stat-cell .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.stat-cell .k{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);margin-top:3px}
+.stat-cell .v.green{color:var(--food)}
+#deathCause{color:var(--danger);letter-spacing:.18em;text-transform:uppercase;font-size:13px;margin-top:8px}
+#victoryScreen h1.title-display{background:linear-gradient(180deg,#fff,var(--food) 70%);-webkit-background-clip:text;background-clip:text}
+
+/* ---------- shop / achievements ---------- */
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.shop-item{background:#15152a;border:1px solid var(--line);border-radius:14px;padding:12px 10px;text-align:center;position:relative;transition:border-color .15s}
+.shop-item .sw{width:34px;height:34px;border-radius:50%;margin:0 auto 8px;box-shadow:0 0 14px currentColor}
+.shop-item .nm{font-size:12.5px;font-weight:700;margin-bottom:2px}
+.shop-item .ds{font-size:11px;color:var(--dim);min-height:28px}
+.shop-item .price{margin-top:8px}
+.shop-item.owned{border-color:#2c5c34}
+.shop-item.equipped{border-color:var(--food);box-shadow:0 0 14px rgba(124,255,107,.25)}
+.shop-item button{margin-top:6px;width:100%}
+.ach{display:flex;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid #1d1d34;opacity:.45}
+.ach.done{opacity:1}
+.ach .ic{width:38px;height:38px;flex:none;border-radius:10px;background:#1b1b30;display:flex;align-items:center;justify-content:center;font-size:19px}
+.ach.done .ic{background:rgba(124,255,107,.12);box-shadow:0 0 12px rgba(124,255,107,.3)}
+.ach .nm{font-weight:700;font-size:14px}
+.ach .ds{font-size:12px;color:var(--dim)}
+.ach .rw{margin-left:auto;color:var(--food);font-size:12px;font-weight:700;white-space:nowrap}
+#achProgress{font-size:12px;color:var(--dim);letter-spacing:.1em}
+.world-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.world-card{border:1px solid var(--line);border-radius:14px;padding:14px 10px;text-align:center;background-size:cover;position:relative;overflow:hidden;transition:transform .12s,border-color .12s;cursor:pointer}
+.world-card:hover{transform:translateY(-3px)}
+.world-card.sel{border-color:var(--food);box-shadow:0 0 16px rgba(124,255,107,.3)}
+.world-card.locked{filter:grayscale(.7) brightness(.6)}
+.world-card .nm{font-weight:800;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+.world-card .ds{font-size:11px;color:#cfc8e0;margin-top:3px;min-height:26px}
+.world-card .price{margin-top:8px}
+
+@media (max-width:600px){
+  #evoBadge{min-width:128px;padding:7px 10px}
+  #scoreBox{padding:7px 10px}
+  #upgradeCards{flex-direction:column;align-items:center}
+  .upCard{width:min(320px,88vw);max-width:none;min-height:0}
+  .upCard .ds{min-height:0}
+}
+.ach-row{display:flex;align-items:center;gap:12px;background:#14142a;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:8px;opacity:.42}
+.ach-row.got{opacity:1;border-color:rgba(124,255,107,.45);background:linear-gradient(90deg,rgba(124,255,107,.06),#14142a)}
+.ach-row .ic{font-size:22px;width:30px;text-align:center;flex:none}
+.ach-row .tx{flex:1;min-width:0}
+.ach-row .nm{font-weight:800;font-size:13px}
+.ach-row .ds{font-size:11px;color:var(--dim);margin-top:2px}
+.ach-row .rw{color:var(--food);font-weight:800;font-size:12px;flex:none}
+#dmgFlash{transition:opacity .25s}
+@media (max-width:600px){
+  .ach-row{padding:8px 10px}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.01s !important;transition-duration:.01s !important}
+}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+<div id="dmgFlash"></div>
+<div id="evoFlash"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="hudTop">
+    <div id="evoBadge">
+      <div id="evoName">The Mote</div>
+      <div id="sizeLabel">2 µm</div>
+      <div id="xpWrap"><div id="xpBar"></div></div>
+      <div id="hpWrap"><div id="hpBar"></div></div>
+    </div>
+    <div id="scoreBox">
+      <div id="scoreVal">0</div>
+      <div id="scoreSub">SCORE</div>
+    </div>
+    <button id="pauseBtn" aria-label="Pause">&#10073;&#10073;</button>
+  </div>
+  <div id="comboBox"><div id="comboNum">x5</div><div id="comboLbl">Combo</div><div id="comboTimer"><div id="comboTimerBar"></div></div></div>
+  <div id="bossWrap"><div id="bossName">MILITARY TITAN</div><div id="bossHpWrap"><div id="bossHpBar"></div></div></div>
+  <div id="stageToast"><div class="small">Evolution</div><div class="big" id="stageToastName">RAVENOUS MITE</div></div>
+  <div id="toasts"></div>
+  <div id="hint">Drag or move mouse &middot; devour everything smaller than you</div>
+  <button id="mutationPrompt" class="hidden" style="position:absolute;bottom:max(24px,env(safe-area-inset-bottom) + 12px);left:50%;transform:translateX(-50%);background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;pointer-events:auto;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">🧬 MUTATE NOW (Space)</button>
+</div>
+
+<!-- MAIN MENU -->
+<div id="menuScreen" class="screen">
+  <h1 class="title-display">World&nbsp;Eater</h1>
+  <div class="subtitle">Feed The Hunger</div>
+  <div style="margin-top:18px"><span class="essence-chip" id="essenceMenu">0</span></div>
+  <div class="menu-stack">
+    <button class="btn primary" id="playBtn">DEVOUR</button>
+    <button class="btn" id="worldsBtn">&#127757; Worlds</button>
+    <button class="btn" id="shopBtn">&#129516; Evolution Lab</button>
+    <button class="btn ghost" id="achBtn">&#127942; Achievements</button>
+    <button class="btn ghost" id="settingsBtn">&#9881;&#65039; Settings</button>
+  </div>
+  <div id="bestLine" style="margin-top:22px;color:var(--dim);font-size:13px;letter-spacing:.1em"></div>
+</div>
+
+<!-- PAUSE -->
+<div id="pauseScreen" class="screen overlay hidden">
+  <h1 class="title-display" style="font-size:clamp(28px,6vw,52px)">Paused</h1>
+  <div class="menu-stack">
+    <button class="btn primary" id="resumeBtn">RESUME</button>
+    <button class="btn ghost" id="pauseSettingsBtn">&#9881;&#65039; Settings</button>
+    <button class="btn ghost" id="quitBtn">Abandon Run</button>
+  </div>
+</div>
+
+<!-- UPGRADES -->
+<div id="upgradeScreen" class="screen overlay hidden">
+  <h2>Mutation</h2>
+  <div class="lvl" id="upgradeLvl">LEVEL 2</div>
+  <div id="upgradeCards"></div>
+</div>
+
+<!-- GAME OVER -->
+<div id="gameOverScreen" class="screen overlay hidden">
+  <h1 class="title-display" style="font-size:clamp(30px,7vw,64px)">Devoured</h1>
+  <div id="deathCause">Crushed by something bigger</div>
+  <div class="stat-grid">
+    <div class="stat-cell"><div class="v" id="goScore">0</div><div class="k">Score</div></div>
+    <div class="stat-cell"><div class="v" id="goEaten">0</div><div class="k">Consumed</div></div>
+    <div class="stat-cell"><div class="v" id="goEvo">-</div><div class="k">Final Form</div></div>
+    <div class="stat-cell"><div class="v" id="goCombo">0</div><div class="k">Best Combo</div></div>
+    <div class="stat-cell"><div class="v" id="goTime">0:00</div><div class="k">Survived</div></div>
+    <div class="stat-cell"><div class="v green" id="goEssence">+0</div><div class="k">Essence</div></div>
+  </div>
+  <div id="goNewBest" class="hidden" style="color:var(--warn);font-weight:800;letter-spacing:.2em;margin-bottom:14px">&#9733; NEW BEST SCORE &#9733;</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+    <button class="btn primary" id="retryBtn">FEED AGAIN</button>
+    <button class="btn ghost" id="goMenuBtn">Menu</button>
+  </div>
+</div>
+
+<!-- VICTORY -->
+<div id="victoryScreen" class="screen overlay hidden">
+  <h1 class="title-display" style="font-size:clamp(28px,6.4vw,60px)">Universe<br>Consumed</h1>
+  <div class="subtitle" style="margin-top:14px">Nothing remains. The Hunger sleeps... for now.</div>
+  <div class="stat-grid">
+    <div class="stat-cell"><div class="v" id="vScore">0</div><div class="k">Score</div></div>
+    <div class="stat-cell"><div class="v" id="vEaten">0</div><div class="k">Consumed</div></div>
+    <div class="stat-cell"><div class="v" id="vTime">0:00</div><div class="k">Run Time</div></div>
+    <div class="stat-cell"><div class="v green" id="vEssence">+0</div><div class="k">Essence</div></div>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+    <button class="btn primary" id="vRetryBtn">NEW UNIVERSE</button>
+    <button class="btn ghost" id="vMenuBtn">Menu</button>
+  </div>
+</div>
+
+<!-- WORLD SELECT -->
+<div id="worldsScreen" class="screen overlay hidden">
+  <div class="panel">
+    <header><h2>Choose a World</h2><button class="btn small ghost close-btn" data-close="worldsScreen">&#10005;</button></header>
+    <div class="body"><div class="world-grid" id="worldGrid"></div></div>
+  </div>
+</div>
+
+<!-- SHOP -->
+<div id="shopScreen" class="screen overlay hidden">
+  <div class="panel">
+    <header><h2>Evolution Lab</h2>
+      <div style="display:flex;gap:10px;align-items:center"><span class="essence-chip" id="essenceShop">0</span>
+      <button class="btn small ghost close-btn" data-close="shopScreen">&#10005;</button></div></header>
+    <div class="tabs">
+      <button class="tab active" data-shoptab="skins">Skins</button>
+      <button class="tab" data-shoptab="trails">Trails</button>
+      <button class="tab" data-shoptab="perks">Perks</button>
+    </div>
+    <div class="body"><div class="shop-grid" id="shopGrid"></div></div>
+  </div>
+</div>
+
+<!-- ACHIEVEMENTS -->
+<div id="achScreen" class="screen overlay hidden">
+  <div class="panel">
+    <header><h2>Achievements</h2>
+      <div style="display:flex;gap:10px;align-items:center"><span id="achProgress">0 / 100</span>
+      <button class="btn small ghost close-btn" data-close="achScreen">&#10005;</button></div></header>
+    <div class="body" id="achList"></div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="settingsScreen" class="screen overlay hidden">
+  <div class="panel">
+    <header><h2>Settings</h2><button class="btn small ghost close-btn" data-close="settingsScreen">&#10005;</button></header>
+    <div class="body" id="settingsBody">
+      <div class="row"><div><div class="lbl">Master volume</div></div><input type="range" id="sMaster" min="0" max="100" value="80"></div>
+      <div class="row"><div><div class="lbl">Music volume</div></div><input type="range" id="sMusic" min="0" max="100" value="55"></div>
+      <div class="row"><div><div class="lbl">Sound effects</div></div><input type="range" id="sSfx" min="0" max="100" value="85"></div>
+      <div class="row"><div><div class="lbl">Screen shake</div><div class="sub">Camera impact on big hits</div></div><button class="toggle on" id="sShake" role="switch" aria-checked="true"></button></div>
+      <div class="row"><div><div class="lbl">Reduced effects</div><div class="sub">Fewer particles and flashes</div></div><button class="toggle" id="sReduced" role="switch" aria-checked="false"></button></div>
+      <div class="row"><div><div class="lbl">Performance mode</div><div class="sub">Lower resolution, fewer objects</div></div><button class="toggle" id="sPerf" role="switch" aria-checked="false"></button></div>
+      <div class="row"><div><div class="lbl">Colorblind-friendly</div><div class="sub">Pattern-coded threats, safer palette</div></div><button class="toggle" id="sCb" role="switch" aria-checked="false"></button></div>
+      <div class="row"><div><div class="lbl">UI scale</div></div><input type="range" id="sUi" min="80" max="140" value="100"></div>
+      <div class="row"><div><div class="lbl">Reset all progress</div><div class="sub">Cannot be undone</div></div><button class="btn small ghost" id="sReset">Reset</button></div>
+    </div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
