@@ -344,6 +344,15 @@ function getPerkSvg(id, color) {
   return start + body + end;
 }
 
+function getTrailSvg(id, color) {
+  const c = color || "currentColor";
+  if (id === "trail_none") {
+    return `<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:${c}; stroke-width:2; stroke-linecap:round"><circle cx="12" cy="12" r="8"></circle><path d="M6.3 6.3l11.4 11.4"></path></svg>`;
+  }
+  // fading particle wake — the same motif the trail draws in-game
+  return `<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:${c}"><circle cx="4.5" cy="18" r="1.6" opacity="0.3"></circle><circle cx="10" cy="13.5" r="2.2" opacity="0.55"></circle><circle cx="16" cy="9" r="2.8" opacity="0.8"></circle><circle cx="20.5" cy="4.5" r="1.4" opacity="0.45"></circle></svg>`;
+}
+
 function getAchSvg(id, color) {
   const c = color || "currentColor";
   const start = `<svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:${c}; stroke-width:2; stroke-linecap:round; stroke-linejoin:round">`;
@@ -1584,6 +1593,7 @@ function victory() {
   const { ess } = finishRunCommon();
   $("vScore").textContent = fmtInt(G.score);
   $("vEaten").textContent = fmtInt(G.eaten);
+  $("vCombo").textContent = "x" + G.bestCombo;
   $("vTime").textContent = fmtTime(G.time);
   $("vEssence").textContent = "+" + fmtInt(ess);
   setTimeout(() => { show("victoryScreen"); hide("hud"); }, 1100);
@@ -2561,16 +2571,7 @@ function buildShop() {
     if (it.type === "skins") {
       bubbleHtml = '<div class="skin-bubble" style="background:' + it.color + '; box-shadow:0 0 12px ' + it.color + '"><div class="skin-pupil"></div></div>';
     } else if (it.type === "trails") {
-      let trailIcon = "✨";
-      if (it.id === "trail_none") trailIcon = "🚫";
-      else if (it.id === "trail_slime") trailIcon = "🦠";
-      else if (it.id === "trail_ember") trailIcon = "🔥";
-      else if (it.id === "trail_frost") trailIcon = "❄️";
-      else if (it.id === "trail_star") trailIcon = "⭐";
-      else if (it.id === "trail_galaxy") trailIcon = "🌌";
-      else if (it.id === "trail_blood") trailIcon = "🩸";
-      else if (it.id === "trail_neon") trailIcon = "🌈";
-      bubbleHtml = '<div class="trail-bubble" style="background:rgba(255,255,255,0.04); border:1px solid ' + it.color + '; box-shadow:inset 0 0 8px ' + it.color + '"><span style="font-size:16px">' + trailIcon + '</span></div>';
+      bubbleHtml = '<div class="trail-bubble" style="background:rgba(255,255,255,0.04); border:1px solid ' + it.color + '; box-shadow:inset 0 0 8px ' + it.color + '">' + getTrailSvg(it.id, it.color) + '</div>';
     } else if (it.type === "perks") {
       bubbleHtml = '<div class="perk-bubble" style="background:rgba(255,255,255,0.04); border:1px solid ' + it.color + '; box-shadow:0 0 10px ' + it.color + '">' + getPerkSvg(it.id, it.color) + '</div>';
     }
