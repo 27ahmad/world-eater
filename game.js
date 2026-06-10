@@ -46,7 +46,7 @@ const Save = (() => {
       maxEvo: 0, victories: 0, totalUpgrades: 0, totalTime: 0,
       owned: { skin_void: true, trail_none: true }, equippedSkin: "skin_void", equippedTrail: "trail_none",
       perks: {}, ach: {}, worlds: { city: true }, world: "city",
-      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false }
+      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false, autoMutate: false }
     };
   }
   function load() {
@@ -229,6 +229,19 @@ const UPGRADES = [
   U("zenith","🌠","Zenith","+15% to speed, XP, growth and score","legend",s=>{s.speed*=1.15;s.xpMult*=1.15;s.growMult*=1.15;s.scoreMult*=1.15;},1)
 ];
 const RARITY_W = { common: 100, rare: 42, epic: 14, legend: 4 };
+
+const UPGRADE_DIETS = {
+  predator: "blob", sprinter: "blob", regen: "blob", vitality: "blob", titan: "blob",
+  adrenal: "blob", thorns: "blob", longtongue: "blob", apex: "blob", evolveheal: "blob",
+  vampiric: "blob", colossus: "blob", rage: "blob", ravenous: "blob", feast: "blob", starving: "blob",
+  density: "poly", omnivore: "poly", swift: "poly", stilljaw: "poly", seismic: "poly",
+  xpcrystal: "poly", scavenger: "poly", afterburn: "poly", frenzy: "poly",
+  thickhide: "rect", hardshell: "rect", bulwark: "rect", greed: "rect", lucky: "rect",
+  farsight: "rect", patience: "rect", cosmicluck: "rect",
+  vacuum: "glow", magnetcore: "glow", singularity: "glow", blackhole: "glow", undertow: "glow",
+  doublebite: "glow", comboglue: "glow", comboheat: "glow", burst: "glow", echo: "glow",
+  timeeater: "glow", ironjaw: "glow", zenith: "glow"
+};
 
 /* ---------------- worlds: 5 ---------------- */
 const WORLDS = [
@@ -575,7 +588,7 @@ function startRun() {
     G.level = 2;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   }
-  G.run = { maxEvoRun: 0, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false };
+  G.run = { maxEvoRun: 0, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false, diet: { blob: 0, rect: 0, poly: 0, glow: 0 } };
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
@@ -688,6 +701,9 @@ function killBoss() {
   }
   G.boss = null;
   checkAch();
+  if (!b.def.final) {
+    checkBossSpawn();
+  }
 }
 
 /* ---------------- scoring / xp / growth ---------------- */
@@ -704,10 +720,14 @@ function addXp(v) {
     G.xp -= G.xpNeed;
     G.level++;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
-    G.pendingMutations = (G.pendingMutations || 0) + 1;
     leveled = true;
+    if (P.settings.autoMutate) {
+      autoMutateOne();
+    } else {
+      G.pendingMutations = (G.pendingMutations || 0) + 1;
+    }
   }
-  if (leveled) {
+  if (leveled && !P.settings.autoMutate) {
     SFX.levelup();
     FX.ring(G.player.x, G.player.y, G.player.r * 4, "#7cff6b", 4);
     toast("🧬 Evolved to level " + G.level + "! Press Space to Mutate");
@@ -738,6 +758,7 @@ function consume(o, chained) {
   growBy(o.r * o.r / Math.max(p.targetR, 1) * 0.16 / (1 + G.evoIndex * 0.5));
   if (s.eatHeal) s.hp = Math.min(s.maxHp, s.hp + s.eatHeal);
   G.eaten++; P.totalEaten++;
+  if (o.shape && o.shape !== "shard" && G.run && G.run.diet) G.run.diet[o.shape] = (G.run.diet[o.shape] || 0) + 1;
   p.eatCount++; p.mouth = 1;
   // feedback
   const big = ratio > 0.55;
@@ -900,28 +921,72 @@ function pickUpgrade(u) {
   }
 }
 
+function checkBossSpawn() {
+  if (G.boss || G.bossPending || G.state !== "play") return;
+  const eligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
+  if (eligible.length) {
+    G.bossPending = true;
+    const runToken = G.run;
+    const fire = () => {
+      if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
+      if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; }
+      G.bossPending = false;
+      const reEligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
+      if (reEligible.length) spawnBoss(reEligible[reEligible.length - 1]);
+    };
+    setTimeout(fire, 2600);
+  }
+}
+
+function autoMutateOne() {
+  const choices = rollChoices();
+  if (!choices || !choices.length) return;
+  let bestChoice = choices[0];
+  let bestScore = -1;
+  choices.forEach(u => {
+    const category = UPGRADE_DIETS[u.id] || "blob";
+    const baseVal = (G.run && G.run.diet) ? (G.run.diet[category] || 0) : 0;
+    const rarityBonus = u.rarity === "legend" ? 35 : u.rarity === "epic" ? 15 : u.rarity === "rare" ? 5 : 0;
+    const score = baseVal + rarityBonus;
+    if (score > bestScore) {
+      bestScore = score;
+      bestChoice = u;
+    }
+  });
+  pickUpgradeQuiet(bestChoice);
+}
+
+function pickUpgradeQuiet(u) {
+  runUpgradeCounts[u.id] = (runUpgradeCounts[u.id] || 0) + 1;
+  const s = G.stats;
+  const beforeMax = s.maxHp;
+  u.apply(s);
+  if (s.heal) { s.hp = Math.min(s.maxHp, s.hp + s.heal + (s.maxHp - beforeMax)); s.heal = 0; }
+  if (s.instaGrow) { G.player.targetR *= s.instaGrow; s.instaGrow = 0; }
+  if (u.rarity === "legend") G.run.legendPicked = true;
+  P.totalUpgrades++; G.upCount++;
+  saveP();
+  SFX.pick();
+  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "🧬 " + u.icon + " " + u.name, "#7cff6b", 1.25);
+  toast("🧬 Evolved! Auto-mutated: <b>" + u.name + "</b>");
+  G.pendingMutations = Math.max(0, G.pendingMutations - 1);
+  updateMutationPrompt();
+  checkAch();
+}
+
 /* ---------------- evolution ---------------- */
 function checkEvolution() {
   const p = G.player;
+  let evolved = false;
   while (G.evoIndex < 19 && p.r >= EVOR[G.evoIndex + 1]) {
     G.evoIndex++;
     G.run.maxEvoRun = Math.max(G.run.maxEvoRun, G.evoIndex);
     P.maxEvo = Math.max(P.maxEvo, G.evoIndex);
     evolveFanfare();
-    const bdef = BOSSES.find(b => b.evo === G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
-    if (bdef && !G.boss && !G.bossPending) {
-      G.bossPending = true;
-      const runToken = G.run;
-      const fire = () => {
-        if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
-        if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; } // wait out upgrade/pause screens
-        G.bossPending = false;
-        // spawn the most advanced boss the player has reached and not yet killed this run
-        const eligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
-        if (eligible.length) spawnBoss(eligible[eligible.length - 1]);
-      };
-      setTimeout(fire, 2600);
-    }
+    evolved = true;
+  }
+  if (evolved) {
+    checkBossSpawn();
   }
 }
 function evolveFanfare() {
@@ -1049,13 +1114,14 @@ function buildAmbient() {
 }
 
 function updateMutationPrompt() {
-  const p = $("mutationPrompt");
-  if (!p) return;
+  const wrap = $("mutationPromptWrap");
+  if (!wrap) return;
   if (G.pendingMutations > 0 && G.state === "play") {
-    p.textContent = "🧬 MUTATE NOW x" + G.pendingMutations + " (Space)";
-    p.classList.remove("hidden");
+    const p = $("mutationPrompt");
+    if (p) p.textContent = "🧬 MUTATE NOW x" + G.pendingMutations + " (Space)";
+    wrap.classList.remove("hidden");
   } else {
-    p.classList.add("hidden");
+    wrap.classList.add("hidden");
   }
 }
 
@@ -1338,8 +1404,8 @@ function update(dt) {
     const c = G.victoryCore;
     c.t += dt;
     const d = Math.hypot(c.x - p.x, c.y - p.y);
-    if (d < magR + c.r) { const pull = p.r * 2 * dt; c.x += (p.x - c.x) / Math.max(d, 1) * pull; c.y += (p.y - c.y) / Math.max(d, 1) * pull; }
-    if (p.r >= c.r * 0.9 && d < p.r + c.r * 0.4) { G.victoryCore = null; victory(); return; }
+    if (d < magR + c.r) { const pull = p.r * 8 * dt; c.x += (p.x - c.x) / Math.max(d, 1) * pull; c.y += (p.y - c.y) / Math.max(d, 1) * pull; }
+    if (p.r >= c.r * 0.9 && d < p.r + c.r * 0.65) { G.victoryCore = null; victory(); return; }
   }
 
   /* ---- spawn maintenance ---- */
@@ -1574,6 +1640,40 @@ function render() {
         c.lineWidth = 2.5;
         c.strokeText("BOSS", 0, 18);
         c.fillText("BOSS", 0, 18);
+        c.restore();
+      }
+    }
+    
+    // 1.5. Offscreen Universe Core pointer
+    if (G.victoryCore) {
+      const sx = (G.victoryCore.x - p.x) * z + W / 2;
+      const sy = (G.victoryCore.y - p.y) * z + H / 2;
+      if (sx < 0 || sx > W || sy < 0 || sy > H) {
+        const angle = Math.atan2(sy - H / 2, sx - W / 2);
+        const px = clamp(sx, margin, W - margin);
+        const py = clamp(sy, margin, H - margin);
+        
+        c.save();
+        c.translate(px, py);
+        c.rotate(angle);
+        
+        const pulse = 1 + 0.2 * Math.sin(t * 12);
+        c.fillStyle = "#c44dff";
+        c.beginPath();
+        c.moveTo(14 * pulse, 0);
+        c.lineTo(-7 * pulse, -11 * pulse);
+        c.lineTo(-7 * pulse, 11 * pulse);
+        c.closePath();
+        c.fill();
+        
+        c.rotate(-angle);
+        c.font = "bold 9px Inter, sans-serif";
+        c.fillStyle = "#c44dff";
+        c.textAlign = "center";
+        c.strokeStyle = "rgba(0,0,0,0.7)";
+        c.lineWidth = 2.5;
+        c.strokeText("CORE 🌌", 0, 18);
+        c.fillText("CORE 🌌", 0, 18);
         c.restore();
       }
     }
@@ -1817,6 +1917,27 @@ function buildAchList() {
 }
 
 /* ---------------- settings wiring ---------------- */
+function syncAutoMutateUI() {
+  const active = !!P.settings.autoMutate;
+  const btn = $("autoMutateTog");
+  if (btn) {
+    btn.textContent = "Auto: " + (active ? "On" : "Off");
+    btn.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
+    btn.style.borderColor = active ? "var(--food)" : "var(--line)";
+    btn.style.color = active ? "var(--food)" : "var(--dim)";
+    if (active) {
+      btn.style.boxShadow = "0 0 10px rgba(124,255,107,0.25)";
+    } else {
+      btn.style.boxShadow = "none";
+    }
+  }
+  const sBtn = $("sAutoMutate");
+  if (sBtn) {
+    sBtn.classList.toggle("on", active);
+    sBtn.setAttribute("aria-checked", active);
+  }
+}
+
 function applySettingsToUI() {
   $("sMaster").value = P.settings.master;
   $("sMusic").value = P.settings.music;
@@ -1826,6 +1947,7 @@ function applySettingsToUI() {
   $("sReduced").classList.toggle("on", P.settings.reduced);
   $("sPerf").classList.toggle("on", P.settings.perf);
   $("sCb").classList.toggle("on", P.settings.cb);
+  syncAutoMutateUI();
   document.documentElement.style.setProperty("--ui-scale", P.settings.ui / 100);
 }
 function bindSettings() {
@@ -1836,6 +1958,12 @@ function bindSettings() {
   tog("sReduced", "reduced");
   tog("sPerf", "perf", resize);
   tog("sCb", "cb");
+  tog("sAutoMutate", "autoMutate", () => {
+    syncAutoMutateUI();
+    if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
+      while (G.pendingMutations > 0) autoMutateOne();
+    }
+  });
   let armed = false;
   $("sReset").addEventListener("click", () => {
     if (!armed) { armed = true; $("sReset").textContent = "Sure?"; setTimeout(() => { armed = false; $("sReset").textContent = "Reset"; }, 2500); return; }
@@ -1874,6 +2002,15 @@ function bindUI() {
   $("mutationPrompt").onclick = () => {
     if (G.state === "play" && G.pendingMutations > 0) {
       openMutationScreen();
+    }
+  };
+  $("autoMutateTog").onclick = () => {
+    P.settings.autoMutate = !P.settings.autoMutate;
+    SFX.ui();
+    saveP();
+    syncAutoMutateUI();
+    if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
+      while (G.pendingMutations > 0) autoMutateOne();
     }
   };
 }

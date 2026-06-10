@@ -221,7 +221,10 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <div id="stageToast"><div class="small">Evolution</div><div class="big" id="stageToastName">RAVENOUS MITE</div></div>
   <div id="toasts"></div>
   <div id="hint">Drag or move mouse &middot; devour everything smaller than you</div>
-  <button id="mutationPrompt" class="hidden" style="position:absolute;bottom:max(24px,env(safe-area-inset-bottom) + 12px);left:50%;transform:translateX(-50%);background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;pointer-events:auto;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">🧬 MUTATE NOW (Space)</button>
+  <div id="mutationPromptWrap" class="hidden" style="position:absolute;bottom:max(24px,env(safe-area-inset-bottom) + 12px);left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:auto;z-index:25">
+    <button id="mutationPrompt" style="background:rgba(124,255,107,0.18);border:1px solid var(--food);color:var(--food);border-radius:12px;padding:10px 22px;font-weight:bold;font-size:14px;letter-spacing:0.08em;cursor:pointer;box-shadow:0 0 16px rgba(124,255,107,0.25);display:flex;align-items:center;gap:8px;font-family:inherit;animation:hintFade 1.2s ease-in-out infinite alternate">🧬 MUTATE NOW (Space)</button>
+    <button id="autoMutateTog" style="background:rgba(255,255,255,0.06);border:1px solid var(--line);color:var(--dim);border-radius:12px;padding:10px 14px;font-weight:bold;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit;transition:all 0.15s">Auto: Off</button>
+  </div>
 </div>
 
 <!-- MAIN MENU -->
@@ -336,6 +339,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
       <div class="row"><div><div class="lbl">Reduced effects</div><div class="sub">Fewer particles and flashes</div></div><button class="toggle" id="sReduced" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">Performance mode</div><div class="sub">Lower resolution, fewer objects</div></div><button class="toggle" id="sPerf" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">Colorblind-friendly</div><div class="sub">Pattern-coded threats, safer palette</div></div><button class="toggle" id="sCb" role="switch" aria-checked="false"></button></div>
+      <div class="row"><div><div class="lbl">Auto-Mutate</div><div class="sub">Mutate automatically based on what you consume</div></div><button class="toggle" id="sAutoMutate" role="switch" aria-checked="false"></button></div>
       <div class="row"><div><div class="lbl">UI scale</div></div><input type="range" id="sUi" min="80" max="140" value="100"></div>
       <div class="row"><div><div class="lbl">Reset all progress</div><div class="sub">Cannot be undone</div></div><button class="btn small ghost" id="sReset">Reset</button></div>
     </div>
