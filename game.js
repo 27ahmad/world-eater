@@ -46,6 +46,7 @@ const Save = (() => {
       maxEvo: 0, victories: 0, totalUpgrades: 0, totalTime: 0,
       owned: { skin_void: true, trail_none: true }, equippedSkin: "skin_void", equippedTrail: "trail_none",
       perks: {}, ach: {}, worlds: { city: true }, world: "city",
+      dealId: null, dealExpires: 0,
       settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false, autoMutate: false }
     };
   }
@@ -302,6 +303,260 @@ const SHOP = [];
   // 20 skins + 10 trails + 15 perks + 5 worlds (purchased in world menu) = 50 unlockables
 })();
 
+/* ---------------- visual SVG engines & shop helpers ---------------- */
+function getDietSvg(type, color) {
+  if (type === "blob" || type === "organic") {
+    return `<svg class="diet-icon" viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:${color || "#00f5a0"}; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round"><path d="M12 22V12"></path><path d="M12 12c4-2 6-6 6-10-4 0-8 2-10 6"></path><path d="M12 15c-3-1.5-5-4.5-5-7.5 3 0 5 1.5 6.5 4.5"></path></svg>`;
+  }
+  if (type === "rect" || type === "structural") {
+    return `<svg class="diet-icon" viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:${color || "#ff9a3d"}; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>`;
+  }
+  if (type === "poly" || type === "kinetic") {
+    return `<svg class="diet-icon spin-prop" viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:${color || "#00bbf9"}; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round"><circle cx="12" cy="12" r="3"></circle><path d="M12 9c0-3 2-5 4-5s2 2 0 5-4 1-4 1z"></path><path d="M12 15c0 3-2 5-4 5s-2-2 0-5 4-1 4-1z"></path></svg>`;
+  }
+  if (type === "glow" || type === "cosmic") {
+    return `<svg class="diet-icon spin-gal" viewBox="0 0 24 24" style="width:14px; height:14px; fill:none; stroke:${color || "#d946ef"}; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round"><path d="M12 3a9 9 0 0 1 9 9"></path><path d="M12 21a9 9 0 0 1-9-9"></path><path d="M12 7a5 5 0 0 1 5 5"></path><path d="M12 17a5 5 0 0 1-5-5"></path><circle cx="12" cy="12" r="1.5" fill="${color || "#d946ef"}"></circle></svg>`;
+  }
+  return "";
+}
+
+function getPerkSvg(id, color) {
+  const c = color || "currentColor";
+  const start = `<svg viewBox="0 0 24 24" style="width:16px; height:16px; fill:none; stroke:${c}; stroke-width:2; stroke-linecap:round; stroke-linejoin:round">`;
+  const end = `</svg>`;
+  let body = "";
+  if (id === "perk_head") body = `<path d="M2 4l4 12h12l4-12-5 3-5-7-5 7z"></path>`;
+  else if (id === "perk_legs") body = `<path d="M13 5l7 7-7 7m-8-14l7 7-7 7"></path>`;
+  else if (id === "perk_gut") body = `<path d="M6 9a6 6 0 0 1 12 0v6a3 3 0 0 1-6 0v-2a1 1 0 0 0-2 0v2a3 3 0 0 1-6 0V9z"></path>`;
+  else if (id === "perk_skin") body = `<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>`;
+  else if (id === "perk_brain") body = `<path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.9 1c-.8.2-1.6.2-2.4-.2A4 4 0 0 1 3 14c0-.9.2-1.7.6-2.5-.4-.8-.6-1.6-.6-2.5a4 4 0 0 1 6.5-3.1v-.9A2.5 2.5 0 0 1 9.5 2z"></path><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.9 1c.8.2 1.6.2 2.4-.2A4 4 0 0 0 21 14c0-.9-.2-1.7-.6-2.5.4-.8.6-1.6.6-2.5a4 4 0 0 0-6.5-3.1v-.9A2.5 2.5 0 0 0 14.5 2z"></path>`;
+  else if (id === "perk_heart") body = `<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>`;
+  else if (id === "perk_greed") body = `<path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>`;
+  else if (id === "perk_reroll") body = `<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8" cy="8" r="1" fill="${c}"></circle><circle cx="16" cy="16" r="1" fill="${c}"></circle><circle cx="12" cy="12" r="1" fill="${c}"></circle>`;
+  else if (id === "perk_revive") body = `<path d="M12 2a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm-7 8c-2 0-3 3-3 5v2h8v-7H5zm14 0c2 0 3 3 3 5v2h-8v-7h8z"></path>`;
+  else if (id === "perk_combo") body = `<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>`;
+  else if (id === "perk_boss") body = `<path d="M14.5 17.5L3 6V3h3l11.5 11.5m-3.5-3.5L17.5 14.5m-7-7L7 11"></path>`;
+  else if (id === "perk_lucky") body = `<path d="M12 10a3 3 0 1 0-3-3 3 3 0 0 0 3 3zm0 4a3 3 0 1 0 3 3 3 3 0 0 0-3-3zm-4-2a3 3 0 1 0 3 3 3 3 0 0 0-3-3zm8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3zM12 14v6"></path>`;
+  else if (id === "perk_magnet2") body = `<path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 16a6 6 0 1 1 6-6 6 6 0 0 1-6 6z"></path>`;
+  else if (id === "perk_growth") body = `<path d="M4.5 10.5C4.5 5 12 5 12 12s7.5 7 7.5 1.5M19.5 10.5C19.5 5 12 5 12 12S4.5 19 4.5 13.5"></path>`;
+  else if (id === "perk_start2") body = `<path d="M12 2C8 2 4 10 4 15c0 4 3 7 8 7s8-3 8-7c0-5-4-13-8-13z"></path>`;
+  else body = `<circle cx="12" cy="12" r="8"></circle>`;
+  return start + body + end;
+}
+
+function getAchSvg(id, color) {
+  const c = color || "currentColor";
+  const start = `<svg viewBox="0 0 24 24" style="width:18px; height:18px; fill:none; stroke:${c}; stroke-width:2; stroke-linecap:round; stroke-linejoin:round">`;
+  const end = `</svg>`;
+  let body = "";
+  if (id.startsWith("evo") || id === "victory") {
+    body = `<path d="M4.5 10.5C4.5 5 12 5 12 12s7.5 7 7.5 1.5M19.5 10.5C19.5 5 12 5 12 12S4.5 19 4.5 13.5"></path>`;
+  } else if (id.startsWith("combo")) {
+    body = `<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path>`;
+  } else if (id.startsWith("score")) {
+    body = `<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34M12 2a4 4 0 0 1 4 4v7a4 4 0 0 1-8 0V6a4 4 0 0 1 4-4z"></path>`;
+  } else if (id.startsWith("eat")) {
+    body = `<path d="M12 2a10 10 0 0 0-10 10h10v-10zM12 22a10 10 0 0 0 10-10h-10v10z"></path>`;
+  } else if (id.startsWith("boss")) {
+    body = `<path d="M9 10H6v2h3v-2zm9 0h-3v2h3v-2zm-6 5h-2v2h2v-2z"></path><rect x="4" y="4" width="16" height="13" rx="4"></rect><path d="M9 17v3h6v-3"></path>`;
+  } else if (id.startsWith("world")) {
+    body = `<circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>`;
+  } else if (id.startsWith("time")) {
+    body = `<circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline>`;
+  } else if (id.startsWith("runs")) {
+    body = `<polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path>`;
+  } else if (id.startsWith("ups")) {
+    body = `<polyline points="18 15 12 9 6 15"></polyline>`;
+  } else {
+    body = `<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>`;
+  }
+  return start + body + end;
+}
+
+function getShopItemTier(it) {
+  const price = it.price;
+  if (price >= 300 || it.id === "perk_revive" || it.id === "perk_start2" || it.id === "perk_lucky") return "legendary";
+  if (price >= 180 || it.id === "perk_growth" || it.id === "perk_magnet2" || it.id === "perk_greed") return "epic";
+  if (price >= 80 || it.id === "perk_brain" || it.id === "perk_heart" || it.id === "perk_boss" || it.id === "perk_combo" || it.id === "perk_reroll") return "rare";
+  return "common";
+}
+
+function checkShopDeal() {
+  if (P.dealId && P.dealExpires > Date.now()) {
+    if (P.owned[P.dealId]) {
+      P.dealId = null;
+      P.dealExpires = 0;
+      saveP();
+    } else {
+      return;
+    }
+  }
+  const locked = SHOP.filter(it => !P.owned[it.id] && it.price > 0);
+  if (locked.length > 0) {
+    const target = pick(locked);
+    P.dealId = target.id;
+    P.dealExpires = Date.now() + 20 * 60 * 1000;
+    saveP();
+  } else {
+    P.dealId = null;
+    P.dealExpires = 0;
+  }
+}
+
+function updateShopDealTimer() {
+  const container = $("shopDealContainer");
+  if (!P.dealId || P.dealExpires <= Date.now()) {
+    checkShopDeal();
+    if (!P.dealId) {
+      container.style.display = "none";
+      return;
+    }
+  }
+  const it = SHOP.find(x => x.id === P.dealId);
+  if (!it) {
+    container.style.display = "none";
+    return;
+  }
+  container.style.display = "flex";
+  const typeText = it.type === "skins" ? "Skin" : it.type === "trails" ? "Trail" : "Perk";
+  $("shopDealTitle").innerHTML = `${getDietSvg(it.type === "perks" ? "organic" : (it.type === "skins" ? "organic" : "kinetic"), it.color)} <span style="color:${it.color || "#fff"}">${it.name}</span> (${typeText})`;
+  const diff = P.dealExpires - Date.now();
+  const mins = Math.floor(diff / 60000);
+  const secs = Math.floor((diff % 60000) / 1000);
+  $("shopDealTimer").textContent = "Offer expires in: " + mins + ":" + String(secs).padStart(2, "0");
+  const discounted = Math.max(1, Math.floor(it.price * 0.75));
+  $("shopDealBuyBtn").innerHTML = `BUY - <span class="essence-chip" style="border:none; padding:0; background:none; color:inherit">${discounted}</span>`;
+}
+
+let previewMote = { x: 45, y: 45, r: 15, faceA: 0, mouth: 0 };
+let previewTrailParts = [];
+let hoveredShopItem = null;
+
+function renderShopPreview() {
+  const canvas = $("shopPreviewCanvas");
+  if (!canvas) return;
+  const c = canvas.getContext("2d");
+  const t = performance.now() / 1000;
+  c.fillStyle = "#090d16";
+  c.fillRect(0, 0, 90, 90);
+  let skinId = P.equippedSkin;
+  let trailId = P.equippedTrail;
+  let targetItem = hoveredShopItem;
+  if (!targetItem && P.dealId && $("shopDealContainer").style.display !== "none") {
+    const dealItem = SHOP.find(x => x.id === P.dealId);
+    if (dealItem && (dealItem.type === "skins" || dealItem.type === "trails")) {
+      targetItem = dealItem;
+    }
+  }
+  if (targetItem) {
+    if (targetItem.type === "skins") skinId = targetItem.id;
+    if (targetItem.type === "trails") trailId = targetItem.id;
+    $("previewName").textContent = targetItem.name;
+    $("previewName").style.color = targetItem.color;
+    $("previewDesc").textContent = targetItem.desc;
+    const tier = getShopItemTier(targetItem);
+    const tierBadge = $("previewTier");
+    tierBadge.textContent = tier.toUpperCase();
+    tierBadge.className = "";
+    tierBadge.style.color = tier === "legendary" ? "var(--warn)" : tier === "epic" ? "#d946ef" : tier === "rare" ? "#5db9ff" : "var(--dim)";
+    tierBadge.style.background = tier === "legendary" ? "rgba(255,154,61,0.08)" : tier === "epic" ? "rgba(217,70,239,0.08)" : tier === "rare" ? "rgba(93,185,255,0.08)" : "rgba(255,255,255,0.05)";
+    tierBadge.style.border = "1px solid " + (tier === "legendary" ? "rgba(255,154,61,0.2)" : tier === "epic" ? "rgba(217,70,239,0.2)" : tier === "rare" ? "rgba(93,185,255,0.2)" : "rgba(255,255,255,0.05)");
+  } else {
+    $("previewName").textContent = "Equipped";
+    $("previewName").style.color = "var(--hunger)";
+    $("previewDesc").textContent = "Hover over any item in the lab to inspect.";
+    $("previewTier").textContent = "ACTIVE";
+    $("previewTier").style.color = "var(--food)";
+    $("previewTier").style.background = "rgba(124,255,107,0.08)";
+    $("previewTier").style.border = "1px solid rgba(124,255,107,0.2)";
+  }
+  const skin = SHOP.find(x => x.id === skinId);
+  const skinColor = skin ? skin.color : "#00f5d4";
+  previewMote.x = 45 + Math.cos(t * 3.0) * 22;
+  previewMote.y = 45 + Math.sin(t * 6.0) * 10;
+  const lastX = 45 + Math.cos((t - 0.016) * 3.0) * 22;
+  const lastY = 45 + Math.sin((t - 0.016) * 6.0) * 10;
+  previewMote.faceA = Math.atan2(previewMote.y - lastY, previewMote.x - lastX);
+  if (trailId && trailId !== "trail_none" && Math.random() < 0.6) {
+    const td = SHOP.find(x => x.id === trailId);
+    if (td) {
+      previewTrailParts.push({
+        x: previewMote.x - Math.cos(previewMote.faceA) * 10,
+        y: previewMote.y - Math.sin(previewMote.faceA) * 10,
+        vx: rand(-0.3, 0.3),
+        vy: rand(-0.3, 0.3),
+        r: rand(1.2, 3),
+        c: td.color,
+        life: 1.0,
+        decay: 1.8
+      });
+    }
+  }
+  for (let i = previewTrailParts.length - 1; i >= 0; i--) {
+    const p = previewTrailParts[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life -= p.decay * 0.016;
+    if (p.life <= 0) {
+      previewTrailParts.splice(i, 1);
+      continue;
+    }
+    c.globalAlpha = p.life;
+    c.fillStyle = p.c;
+    c.beginPath();
+    c.arc(p.x, p.y, p.r * p.life, 0, TAU);
+    c.fill();
+  }
+  c.globalAlpha = 1.0;
+  c.save();
+  c.translate(previewMote.x, previewMote.y);
+  c.rotate(previewMote.faceA);
+  c.beginPath();
+  c.moveTo(-8, 0);
+  c.lineWidth = 2.5;
+  c.strokeStyle = shade(skinColor, 0.55);
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  for (let i = 1; i <= 6; i++) {
+    const ratio = i / 6;
+    const lx = -8 - ratio * 12;
+    const wiggle = 3 * Math.sin(t * 16 - i * 0.8);
+    c.lineTo(lx, wiggle);
+  }
+  c.stroke();
+  c.save(); c.rotate(t * 0.35);
+  c.fillStyle = shade(skinColor, 0.62);
+  const ns = 6;
+  for (let i = 0; i < ns; i++) {
+    const a = i / ns * TAU;
+    const L = 14 * (1.1 + 0.07 * Math.sin(t * 5 + i * 2));
+    c.beginPath();
+    c.moveTo(Math.cos(a - 0.16) * 12, Math.sin(a - 0.16) * 12);
+    c.lineTo(Math.cos(a) * L, Math.sin(a) * L);
+    c.lineTo(Math.cos(a + 0.16) * 12, Math.sin(a + 0.16) * 12);
+    c.closePath(); c.fill();
+  }
+  c.restore();
+  c.beginPath();
+  const n = 10;
+  for (let i = 0; i <= n; i++) {
+    const a = i / n * TAU;
+    const rr = 12 * (1 + 0.06 * Math.sin(t * 4.5 + i * 1.9));
+    const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+    if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+  }
+  c.closePath();
+  c.fillStyle = skinColor;
+  c.fill();
+  c.lineWidth = 1.2;
+  c.strokeStyle = shade(skinColor, 0.55);
+  c.stroke();
+  c.fillStyle = "#fff";
+  c.beginPath(); c.arc(3, -2, 2.5, 0, TAU); c.fill();
+  c.fillStyle = "#1a0d1f";
+  c.beginPath(); c.arc(4, -2, 1.3, 0, TAU); c.fill();
+  c.restore();
+}
+
 /* ---------------- achievements: 100, generated ---------------- */
 const ACH = [];
 (function buildAch(){
@@ -430,7 +685,7 @@ const AudioSys = (() => {
     carrier.frequency.setValueAtTime(freq, t);
     
     // Scale modulation index with player combo for more aggression / excitement
-    const comboBonus = (typeof G !== "undefined" && G.comboNum > 5) ? Math.min(G.comboNum, 20) * 0.4 : 0;
+    const comboBonus = (typeof G !== "undefined" && G.combo > 5) ? Math.min(G.combo, 20) * 0.4 : 0;
     const modPeak = freq * (2.8 + comboBonus);
     
     env(modGain, t, 0.008, modPeak, dur * 0.6, 0.0001);
@@ -543,7 +798,7 @@ const AudioSys = (() => {
     };
     loop();
   }
-  return { unlock, applyVolumes, SFX, get ready() { return !!ctx; } };
+  return { unlock, applyVolumes, SFX, blip, get ready() { return !!ctx; } };
 })();
 const SFX = new Proxy({}, { get: (_, k) => (...a) => { try { if (AudioSys.ready) AudioSys.SFX[k](...a); } catch (e) {} } });
 
@@ -726,7 +981,7 @@ function startRun() {
     eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
     manualDashCd: 0
   };
-  G.objs = []; G.shots = []; G.boss = null; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
+  G.objs = []; G.shots = []; G.boss = null; G.bossPending = false; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
   G.xp = 0;
   G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
@@ -816,9 +1071,9 @@ function spawnBoss(bdef) {
   const p = G.player;
   const ang = Math.random() * TAU;
   
-  // Scale boss health based on endless cycle
+  // Scale boss health based on endless cycle (gentle curve so late cycles stay fightable)
   const cycle = G.endlessCycle || 0;
-  const scale = 1 + cycle * 0.45;
+  const scale = 1 + cycle * 0.3;
   const hp = bdef.hp * scale;
   const name = bdef.name + (cycle > 0 ? " +" + cycle : "");
   
@@ -831,7 +1086,7 @@ function spawnBoss(bdef) {
   };
   $("bossWrap").style.display = "block";
   $("bossName").textContent = name;
-  toast("⚠️ <b>" + name + "</b> hunts you");
+  toast("<b>" + name + "</b> hunts you");
 }
 function bossDamage(amount) {
   const b = G.boss; if (!b) return;
@@ -856,7 +1111,7 @@ function killBoss() {
   growBy(b.r * 0.4);
   // food explosion
   for (let i = 0; i < 10; i++) spawnShard(b.x + rand(-b.r, b.r), b.y + rand(-b.r, b.r), G.xpNeed * 0.08);
-  toast("💀 <b>" + b.name + "</b> devoured! +" + fmtInt(reward));
+  toast("<b>" + b.name + "</b> devoured! +" + fmtInt(reward));
   $("bossWrap").style.display = "none";
   if (G.mode === "rush") {
     G.rushBossIndex = (G.rushBossIndex || 0) + 1;
@@ -864,7 +1119,7 @@ function killBoss() {
     checkAch();
     if (G.rushBossIndex >= BOSSES.length) {
       G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
-      toast("🌌 Boss Rush Conquered! Consume the Core to win.");
+      toast("Boss Rush Conquered! Consume the Core to win.");
     } else {
       checkBossSpawn();
     }
@@ -874,10 +1129,10 @@ function killBoss() {
     if (G.mode === "endless") {
       G.endlessCycle = (G.endlessCycle || 0) + 1;
       for (let k in G.run.bossKilled) delete G.run.bossKilled[k];
-      toast("🔄 Boss cycle restarted! Endless Scale " + (G.endlessCycle + 1));
+      toast("Boss cycle restarted! Endless Scale " + (G.endlessCycle + 1));
     } else {
       G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
-      toast("🌌 The <b>Universe Core</b> is exposed. Consume it.");
+      toast("The <b>Universe Core</b> is exposed. Consume it.");
     }
   }
   G.boss = null;
@@ -894,6 +1149,9 @@ function addScore(v, x, y) {
   G.score += gain;
   if (x !== undefined && gain >= 1) FX.text(x, y, "+" + fmtInt(gain), "#ffe89a", clamp(0.7 + gain / 800, 0.7, 1.8));
 }
+function upgradePoolExhausted() {
+  return UPGRADES.every(u => (runUpgradeCounts[u.id] || 0) >= u.max);
+}
 function addXp(v) {
   G.xp += v * G.stats.xpMult * Math.min(comboMult(), 2.5);
   let leveled = false;
@@ -902,7 +1160,11 @@ function addXp(v) {
     G.level++;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
     leveled = true;
-    if (P.settings.autoMutate) {
+    if (upgradePoolExhausted()) {
+      // every mutation is maxed — convert further levels into a heal + score surge
+      G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.maxHp * 0.25);
+      addScore(G.level * 25, G.player.x, G.player.y - G.player.r * 1.3);
+    } else if (P.settings.autoMutate) {
       autoMutateOne();
     } else {
       G.pendingMutations = (G.pendingMutations || 0) + 1;
@@ -911,7 +1173,7 @@ function addXp(v) {
   if (leveled && !P.settings.autoMutate) {
     SFX.levelup();
     FX.ring(G.player.x, G.player.y, G.player.r * 4, "#7cff6b", 4);
-    toast("🧬 Evolved to level " + G.level + "! Press Space to Mutate");
+    if (G.pendingMutations > 0) toast("Evolved to level " + G.level + "! Press Space to Mutate");
   }
 }
 function growBy(amount) {
@@ -1021,7 +1283,7 @@ function hurt(amount, srcName, srcX, srcY) {
     if (s.cheatDeath > 0) {
       s.cheatDeath--; s.hp = s.maxHp * 0.5;
       FX.flash = 0.8; FX.ring(p.x, p.y, p.r * 6, "#fff0a0", 6);
-      toast("😇 <b>Guardian Angel</b> saved you!");
+      toast("<b>Guardian Angel</b> saved you!");
       SFX.levelup();
       return;
     }
@@ -1051,9 +1313,11 @@ function rollChoices() {
   return picks;
 }
 function openMutationScreen() {
+  const choices = rollChoices();
+  if (!choices.length) { G.pendingMutations = 0; updateMutationPrompt(); return; }
   SFX.levelup();
   G.state = "upgrade";
-  G.pendingChoices = rollChoices();
+  G.pendingChoices = choices;
   renderUpgradeCards();
   show("upgradeScreen");
   updateMutationPrompt();
@@ -1078,8 +1342,26 @@ function renderUpgradeCards() {
     // Add visual keyboard hotkey hint
     const keyHint = '<span style="position:absolute;top:10px;left:10px;background:rgba(0,0,0,0.45);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:10px;font-weight:bold;color:var(--dim)">' + (idx + 1) + '</span>';
     
-    card.innerHTML = keyHint + '<div class="icon">' + u.icon + '</div><div class="nm">' + u.name + (u.max > 1 ? ' <span style="color:var(--dim);font-size:11px">Lv' + lvl + "</span>" : "") +
-      '</div><div class="ds">' + u.desc + '</div><div class="rarity r-' + u.rarity + '">' + u.rarity + "</div>";
+    const category = UPGRADE_DIETS[u.id] || "blob";
+    let catText = "Organic";
+    let catColor = "#00f5a0";
+    if (category === "rect") { catText = "Structural"; catColor = "#ff9a3d"; }
+    else if (category === "poly") { catText = "Kinetic"; catColor = "#00bbf9"; }
+    else if (category === "glow") { catText = "Cosmic"; catColor = "#d946ef"; }
+    
+    const svgIcon = getDietSvg(category, catColor);
+    
+    card.innerHTML = keyHint + 
+      '<div class="icon" style="margin-top:12px; margin-bottom:10px; display:flex; justify-content:center">' + 
+        `<div style="transform:scale(2); width:15px; height:15px">${svgIcon}</div>` + 
+      '</div>' +
+      '<div class="nm" style="font-weight:800; font-size:15px; margin-bottom:4px">' + u.name + (u.max > 1 ? ' <span style="color:var(--dim);font-size:11px">Lv' + lvl + "</span>" : "") + '</div>' +
+      '<div class="ds" style="font-size:13px; color:var(--dim); line-height:1.45; min-height:38px; margin-bottom:8px">' + u.desc + '</div>' + 
+      '<div style="font-size:10px; font-weight:800; color:' + catColor + '; margin-bottom:12px; letter-spacing:0.05em; text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:4px">' + 
+        svgIcon + '<span>' + catText + '</span>' + 
+      '</div>' +
+      '<div class="rarity r-' + u.rarity + '">' + u.rarity + "</div>";
+      
     card.onclick = () => pickUpgrade(u);
     wrap.appendChild(card);
   });
@@ -1087,7 +1369,7 @@ function renderUpgradeCards() {
     const rr = document.createElement("button");
     rr.className = "btn ghost small";
     rr.style.marginTop = "14px";
-    rr.textContent = "🎲 Reroll [R]";
+    rr.textContent = "Reroll [R]";
     rr.onclick = triggerReroll;
     wrap.appendChild(rr);
   }
@@ -1098,19 +1380,19 @@ function checkFusions() {
   
   if (!G.fusions.spikeStorm && (runUpgradeCounts.thorns || 0) === 3 && (runUpgradeCounts.burst || 0) === 4) {
     G.fusions.spikeStorm = true;
-    triggerFusionUnlock("Spike Storm 🌵⚡", "Shockwaves release 8 piercing spines!");
+    triggerFusionUnlock("Spike Storm", "Shockwaves release 8 piercing spines!");
   }
   if (!G.fusions.gravitySlipstream && (runUpgradeCounts.vacuum || 0) === 5 && (runUpgradeCounts.slipstream || 0) === 1) {
     G.fusions.gravitySlipstream = true;
-    triggerFusionUnlock("Gravity Slipstream 🌀🌊", "Dashing creates a gravitational trail pulling prey!");
+    triggerFusionUnlock("Gravity Slipstream", "Dashing creates a gravitational trail pulling prey!");
   }
   if (!G.fusions.ironClad && (runUpgradeCounts.density || 0) === 4 && (runUpgradeCounts.thickhide || 0) === 5) {
     G.fusions.ironClad = true;
-    triggerFusionUnlock("Iron Clad 🪨🛡️", "Collision armor increased by 40% against bigger threats!");
+    triggerFusionUnlock("Iron Clad", "Collision armor increased by 40% against bigger threats!");
   }
   if (!G.fusions.reaverRage && (runUpgradeCounts.rage || 0) === 1 && (runUpgradeCounts.vampiric || 0) === 3) {
     G.fusions.reaverRage = true;
-    triggerFusionUnlock("Reaver Rage 🩸🧛", "All bites heal +2 HP during Blood Rage!");
+    triggerFusionUnlock("Reaver Rage", "All bites heal +2 HP during Blood Rage!");
   }
 }
 
@@ -1118,7 +1400,7 @@ function triggerFusionUnlock(title, desc) {
   SFX.levelup();
   FX.flash = 0.6;
   if (G.player) FX.ring(G.player.x, G.player.y, G.player.r * 4, "#00f5d4", 6);
-  toast("✨ <b>FUSION UNLOCKED: " + title + "</b><br>" + desc);
+  toast("<b>FUSION UNLOCKED: " + title + "</b><br>" + desc);
 }
 
 function pickUpgrade(u) {
@@ -1133,16 +1415,18 @@ function pickUpgrade(u) {
   if (u.rarity === "legend") G.run.legendPicked = true;
   P.totalUpgrades++; G.upCount++;
   saveP();
-  FX.text(G.player.x, G.player.y - G.player.r * 1.3, u.icon + " " + u.name, "#c8a6ff", 1.1);
+  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#c8a6ff", 1.1);
   checkAch();
 
   G.pendingMutations = Math.max(0, G.pendingMutations - 1);
-  
-  if (G.pendingMutations > 0) {
+
+  const next = G.pendingMutations > 0 ? rollChoices() : [];
+  if (next.length) {
     SFX.levelup();
-    G.pendingChoices = rollChoices();
+    G.pendingChoices = next;
     renderUpgradeCards();
   } else {
+    G.pendingMutations = 0;
     hide("upgradeScreen");
     G.state = "play";
     updateMutationPrompt();
@@ -1169,20 +1453,22 @@ function checkBossSpawn() {
   if (eligible.length) {
     G.bossPending = true;
     const runToken = G.run;
+    // give a longer breather between ladder bosses on endless re-cycles
+    const delay = (G.mode === "endless" && G.endlessCycle > 0) ? 9000 : 2600;
     const fire = () => {
       if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
       if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; }
       G.bossPending = false;
       const reEligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
-      if (reEligible.length) spawnBoss(reEligible[reEligible.length - 1]);
+      if (reEligible.length) spawnBoss(reEligible[0]); // climb the ladder in order
     };
-    setTimeout(fire, 2600);
+    setTimeout(fire, delay);
   }
 }
 
 function autoMutateOne() {
   const choices = rollChoices();
-  if (!choices || !choices.length) return;
+  if (!choices || !choices.length) { G.pendingMutations = 0; return; }
   let bestChoice = choices[0];
   let bestScore = -1;
   choices.forEach(u => {
@@ -1210,7 +1496,7 @@ function pickUpgradeQuiet(u) {
   P.totalUpgrades++; G.upCount++;
   saveP();
   SFX.pick();
-  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "🧬 " + u.icon + " " + u.name, "#7cff6b", 1.25);
+  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#7cff6b", 1.25);
   G.pendingMutations = Math.max(0, G.pendingMutations - 1);
   updateMutationPrompt();
   checkAch();
@@ -1257,6 +1543,7 @@ function evolveFanfare() {
 function essenceEarned() {
   let e = Math.floor(Math.sqrt(G.score) * 0.9 + G.evoIndex * 6);
   if (G.run.victory) e += 300;
+  e += (G.endlessCycle || 0) * 50; // endless cycles pay out
   return Math.floor(e * G.stats.essenceMult);
 }
 function finishRunCommon() {
@@ -1279,7 +1566,7 @@ function gameOver(cause) {
   const { ess, newBest } = finishRunCommon();
   $("goScore").textContent = fmtInt(G.score);
   $("goEaten").textContent = fmtInt(G.eaten);
-  $("goEvo").textContent = EVOS[G.evoIndex].name;
+  $("goEvo").textContent = EVOS[G.evoIndex].name + (G.mode === "endless" && G.endlessCycle > 0 ? " +" + G.endlessCycle : "");
   $("goCombo").textContent = "x" + G.bestCombo;
   $("goTime").textContent = fmtTime(G.time);
   $("goEssence").textContent = "+" + fmtInt(ess);
@@ -1355,16 +1642,25 @@ function buildAmbient() {
   }
 }
 
+let lastPromptState = null;
 function updateMutationPrompt() {
-  if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
-    while (G.pendingMutations > 0) autoMutateOne();
-    return;
-  }
   const wrap = $("mutationPromptWrap");
   if (!wrap) return;
-  if (G.pendingMutations > 0 && G.state === "play") {
+  
+  const shouldShow = (typeof G !== "undefined" && G && G.state === "play" && G.pendingMutations > 0);
+  const count = shouldShow ? G.pendingMutations : 0;
+  const cacheKey = shouldShow + "_" + count + "_" + (P.settings.autoMutate ? "auto" : "manual");
+  
+  if (cacheKey === lastPromptState) return;
+  lastPromptState = cacheKey;
+  
+  if (shouldShow) {
+    if (P.settings.autoMutate) {
+      while (G.pendingMutations > 0) autoMutateOne();
+      return;
+    }
     const p = $("mutationPrompt");
-    if (p) p.textContent = "🧬 MUTATE NOW x" + G.pendingMutations + " (Space)";
+    if (p) p.textContent = "MUTATE NOW x" + count + " (Space)";
     wrap.classList.remove("hidden");
   } else {
     wrap.classList.add("hidden");
@@ -1378,7 +1674,8 @@ function refreshHud(force) {
   if (!force && hudTick % 2) return; // 30hz is plenty for DOM
   const s = G.stats, evo = EVOS[G.evoIndex];
   $("evoName").textContent = evo.name;
-  $("sizeLabel").textContent = fmtSize(G.player.r) + "  ·  LV " + G.level;
+  const cycleTag = (G.mode === "endless" && G.endlessCycle > 0) ? "  ·  CYCLE " + (G.endlessCycle + 1) : "";
+  $("sizeLabel").textContent = fmtSize(G.player.r) + "  ·  LV " + G.level + cycleTag;
   $("xpBar").style.width = clamp(G.xp / G.xpNeed * 100, 0, 100) + "%";
   $("hpBar").style.width = clamp(s.hp / s.maxHp * 100, 0, 100) + "%";
   $("hpBar").style.background = s.hp / s.maxHp < 0.3 ? "linear-gradient(90deg,#ff3a5e,#ff7a3a)" : "";
@@ -1399,12 +1696,28 @@ function refreshHud(force) {
     cdBar.style.width = (1 - cdRatio) * 100 + "%";
     cdBar.style.background = cdRatio > 0 ? "var(--warn)" : "var(--food)";
   }
+  
+  // Update HUD diet values
+  const db = $("dietBlob"); if (db) db.innerHTML = getDietSvg("organic", "#00f5a0") + " " + (G.run && G.run.diet ? G.run.diet.blob || 0 : 0);
+  const dr = $("dietRect"); if (dr) dr.innerHTML = getDietSvg("structural", "#ff9a3d") + " " + (G.run && G.run.diet ? G.run.diet.rect || 0 : 0);
+  const dp = $("dietPoly"); if (dp) dp.innerHTML = getDietSvg("kinetic", "#00bbf9") + " " + (G.run && G.run.diet ? G.run.diet.poly || 0 : 0);
+  const dg = $("dietGlow"); if (dg) dg.innerHTML = getDietSvg("cosmic", "#d946ef") + " " + (G.run && G.run.diet ? G.run.diet.glow || 0 : 0);
+  const hudAt = $("hudAutoMutateTog");
+  if (hudAt) {
+    const active = !!P.settings.autoMutate;
+    hudAt.textContent = "AUTO: " + (active ? "ON" : "OFF");
+    hudAt.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
+    hudAt.style.borderColor = active ? "var(--food)" : "var(--line)";
+    hudAt.style.color = active ? "var(--food)" : "var(--dim)";
+    hudAt.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
+  }
+  
   updateMutationPrompt();
 }
 
 /* ============================================================
    UPDATE — the simulation
-============================================================ */
+ ============================================================ */
 const KEYS = {};
 window.addEventListener("keydown", e => {
   if (e.key) KEYS[e.key.toLowerCase()] = true;
@@ -1414,7 +1727,7 @@ window.addEventListener("keydown", e => {
     P.settings.muted = !P.settings.muted;
     AudioSys.applyVolumes();
     saveP();
-    toast(P.settings.muted ? "🔇 Sound Muted" : "🔊 Sound Unmuted");
+    toast(P.settings.muted ? "Sound Muted" : "Sound Unmuted");
     return;
   }
   
@@ -1457,6 +1770,10 @@ window.addEventListener("keydown", e => {
   
   // Pause Screen Shortcuts
   if (G.state === "pause") {
+    if (e.key === "Escape" && !$("settingsScreen").classList.contains("hidden")) {
+      SFX.ui(); hide("settingsScreen");
+      return;
+    }
     if (e.key === "Escape" || (e.key && e.key.toLowerCase() === "p") || e.key === "Enter") {
       togglePause();
       return;
@@ -1488,8 +1805,15 @@ window.addEventListener("keydown", e => {
     togglePause();
     return;
   }
+
+  // Menu: Escape closes whichever overlay panel is open
+  if (G.state === "menu" && e.key === "Escape") {
+    for (const id of ["settingsScreen", "shopScreen", "achScreen", "worldsScreen"]) {
+      if (!$(id).classList.contains("hidden")) { SFX.ui(); hide(id); updateMenuChrome(); return; }
+    }
+  }
 });
-window.addEventListener("keyup", e => { KEYS[e.key.toLowerCase()] = false; });
+window.addEventListener("keyup", e => { if (e.key) KEYS[e.key.toLowerCase()] = false; });
 function togglePause() {
   if (G.state === "play") { G.state = "pause"; show("pauseScreen"); SFX.ui(); }
   else if (G.state === "pause") { G.state = "play"; hide("pauseScreen"); hide("settingsScreen"); SFX.ui(); }
@@ -1771,7 +2095,7 @@ function updateBoss(wdt, dt) {
         const tier = clamp(G.evoIndex - randi(0, 1), 0, 19);
         const def = ENEMIES[tier][randi(0, 1)];
         G.objs.push({ x: b.x + rand(-b.r, b.r), y: b.y + rand(-b.r, b.r), vx: 0, vy: 0,
-          r: EVOR[tier] * rand(0.5, 0.8), name: def[0], color: def[1] === undefined ? "#fff" : def[2], shape: "blob", tier,
+          r: EVOR[tier] * rand(0.5, 0.8), name: def[0], color: def[2] || "#fff", shape: "blob", tier,
           ai: def[1], a: 0, spin: 0, wob: Math.random() * 9, hp: 1, fireT: rand(1, 2), dartT: rand(0.5, 1.5), wx: 0, wy: 0, stun: 0 });
       }
       if (!P.settings.reduced) FX.ring(b.x, b.y, b.r * 1.8, b.color, 3);
@@ -2021,8 +2345,8 @@ function render() {
         c.textAlign = "center";
         c.strokeStyle = "rgba(0,0,0,0.7)";
         c.lineWidth = 2.5;
-        c.strokeText("CORE 🌌", 0, 18);
-        c.fillText("CORE 🌌", 0, 18);
+        c.strokeText("CORE", 0, 18);
+        c.fillText("CORE", 0, 18);
         c.restore();
       }
     }
@@ -2059,9 +2383,8 @@ function render() {
           c.fillStyle = "#ff9a3d";
           c.textAlign = "center";
           c.strokeStyle = "rgba(0,0,0,0.7)";
-          c.lineWidth = 2;
-          c.strokeText("⚠️", 0, 14);
-          c.fillText("⚠️", 0, 14);
+          c.strokeText("!", 0, 14);
+          c.fillText("!", 0, 14);
           c.restore();
         }
       }
@@ -2224,28 +2547,57 @@ function buildWorldGrid() {
 
 let shopTab = "skins";
 function buildShop() {
+  checkShopDeal();
   const grid = $("shopGrid");
   grid.innerHTML = "";
   SHOP.filter(it => it.type === shopTab).forEach(it => {
     const owned = !!P.owned[it.id];
     const equipped = P.equippedSkin === it.id || P.equippedTrail === it.id;
+    const tier = getShopItemTier(it);
     const card = document.createElement("button");
-    card.className = "world-card" + (equipped ? " sel" : "") + (owned ? "" : " locked");
-    card.innerHTML = '<div style="width:30px;height:30px;border-radius:50%;margin:0 auto 8px;background:' + (it.color || "#888") + ';box-shadow:0 0 14px ' + (it.color || "#888") + '"></div>' +
-      '<div class="nm">' + it.name + '</div><div class="ds">' + it.desc + "</div>" +
-      '<div class="price">' + (equipped ? '<span style="color:var(--food);font-weight:800">EQUIPPED</span>'
-        : owned ? '<span style="color:var(--dim)">' + (it.type === "perks" ? "OWNED" : "Tap to equip") + "</span>"
+    card.className = "shop-card t-" + tier + (equipped ? " sel" : "") + (owned ? "" : " locked");
+    
+    let bubbleHtml = "";
+    if (it.type === "skins") {
+      bubbleHtml = '<div class="skin-bubble" style="background:' + it.color + '; box-shadow:0 0 12px ' + it.color + '"><div class="skin-pupil"></div></div>';
+    } else if (it.type === "trails") {
+      let trailIcon = "✨";
+      if (it.id === "trail_none") trailIcon = "🚫";
+      else if (it.id === "trail_slime") trailIcon = "🦠";
+      else if (it.id === "trail_ember") trailIcon = "🔥";
+      else if (it.id === "trail_frost") trailIcon = "❄️";
+      else if (it.id === "trail_star") trailIcon = "⭐";
+      else if (it.id === "trail_galaxy") trailIcon = "🌌";
+      else if (it.id === "trail_blood") trailIcon = "🩸";
+      else if (it.id === "trail_neon") trailIcon = "🌈";
+      bubbleHtml = '<div class="trail-bubble" style="background:rgba(255,255,255,0.04); border:1px solid ' + it.color + '; box-shadow:inset 0 0 8px ' + it.color + '"><span style="font-size:16px">' + trailIcon + '</span></div>';
+    } else if (it.type === "perks") {
+      bubbleHtml = '<div class="perk-bubble" style="background:rgba(255,255,255,0.04); border:1px solid ' + it.color + '; box-shadow:0 0 10px ' + it.color + '">' + getPerkSvg(it.id, it.color) + '</div>';
+    }
+    
+    card.innerHTML = bubbleHtml +
+      '<div class="nm" style="font-size:13px; font-weight:800; margin-bottom:2px">' + it.name + '</div>' + 
+      '<div class="ds" style="font-size:10px; color:var(--dim); line-height:1.3; min-height:24px; margin-bottom:4px">' + it.desc + '</div>' +
+      '<div class="price" style="font-size:11px">' + (equipped ? '<span style="color:var(--food);font-weight:800">EQUIPPED</span>'
+        : owned ? '<span style="color:var(--dim)">' + (it.type === "perks" ? "OWNED" : "EQUIP") + "</span>"
         : '<span class="essence-chip">' + it.price + "</span>") + "</div>";
+        
     card.onclick = () => {
       if (!owned) {
         if (P.essence < it.price) { SFX.hurt(); toast("Need <b>" + (it.price - P.essence) + "</b> more essence"); return; }
         P.essence -= it.price; P.owned[it.id] = true; SFX.levelup();
-        toast("🧬 <b>" + it.name + "</b> unlocked!");
+        toast("Unlocked: <b>" + it.name + "</b>!");
       } else SFX.ui();
       if (it.type === "skins") P.equippedSkin = it.id;
       if (it.type === "trails") P.equippedTrail = it.id;
       saveP(); buildShop(); updateMenuChrome(); checkAch();
     };
+    
+    card.onmouseenter = () => { hoveredShopItem = it; };
+    card.onmouseleave = () => { if (hoveredShopItem === it) hoveredShopItem = null; };
+    card.onfocus = () => { hoveredShopItem = it; };
+    card.onblur = () => { if (hoveredShopItem === it) hoveredShopItem = null; };
+    
     grid.appendChild(card);
   });
 }
@@ -2259,7 +2611,8 @@ function buildAchList() {
   sorted.forEach(a => {
     const row = document.createElement("div");
     row.className = "ach-row" + (P.ach[a.id] ? " got" : "");
-    row.innerHTML = '<div class="ic">' + a.icon + '</div><div class="tx"><div class="nm">' + a.name +
+    const badgeSvg = getAchSvg(a.id, P.ach[a.id] ? "#00f5a0" : "var(--dim)");
+    row.innerHTML = '<div class="ic" style="display:flex; align-items:center; justify-content:center">' + badgeSvg + '</div><div class="tx"><div class="nm">' + a.name +
       '</div><div class="ds">' + a.desc + '</div></div><div class="rw">+' + a.reward + "</div>";
     list.appendChild(row);
   });
@@ -2274,11 +2627,15 @@ function syncAutoMutateUI() {
     btn.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
     btn.style.borderColor = active ? "var(--food)" : "var(--line)";
     btn.style.color = active ? "var(--food)" : "var(--dim)";
-    if (active) {
-      btn.style.boxShadow = "0 0 10px rgba(124,255,107,0.25)";
-    } else {
-      btn.style.boxShadow = "none";
-    }
+    btn.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
+  }
+  const hudAt = $("hudAutoMutateTog");
+  if (hudAt) {
+    hudAt.textContent = "AUTO: " + (active ? "ON" : "OFF");
+    hudAt.style.background = active ? "rgba(124,255,107,0.12)" : "rgba(255,255,255,0.06)";
+    hudAt.style.borderColor = active ? "var(--food)" : "var(--line)";
+    hudAt.style.color = active ? "var(--food)" : "var(--dim)";
+    hudAt.style.boxShadow = active ? "0 0 10px rgba(124,255,107,0.25)" : "none";
   }
   const sBtn = $("sAutoMutate");
   if (sBtn) {
@@ -2323,6 +2680,12 @@ function bindSettings() {
 }
 
 /* ---------------- screen buttons ---------------- */
+const MODE_DESC = {
+  standard: "Grow from a mote to the universe. Devour the final boss to win.",
+  endless: "No ending. The boss ladder cycles forever, growing stronger each loop.",
+  rush: "Start huge and face all 10 bosses back-to-back.",
+  zen: "No damage, no bosses. Just you and an endless buffet."
+};
 function bindUI() {
   document.querySelectorAll(".mode-tab").forEach(tab => {
     tab.onclick = () => {
@@ -2333,6 +2696,8 @@ function bindUI() {
         t.style.color = isActive ? "" : "var(--dim)";
       });
       selectedMode = tab.getAttribute("data-mode");
+      const md = $("modeDesc");
+      if (md) md.textContent = MODE_DESC[selectedMode] || "";
     };
   });
 
@@ -2374,6 +2739,43 @@ function bindUI() {
       while (G.pendingMutations > 0) autoMutateOne();
     }
   };
+  const hudAt = $("hudAutoMutateTog");
+  if (hudAt) {
+    hudAt.onclick = () => {
+      P.settings.autoMutate = !P.settings.autoMutate;
+      SFX.ui();
+      saveP();
+      syncAutoMutateUI();
+      if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
+        while (G.pendingMutations > 0) autoMutateOne();
+      }
+    };
+  }
+  const dealBuy = $("shopDealBuyBtn");
+  if (dealBuy) {
+    dealBuy.onclick = () => {
+      if (!P.dealId) return;
+      const it = SHOP.find(x => x.id === P.dealId);
+      if (!it) return;
+      const price = Math.max(1, Math.floor(it.price * 0.75));
+      if (P.essence < price) {
+        SFX.hurt();
+        toast("Need <b>" + (price - P.essence) + "</b> more essence");
+        return;
+      }
+      P.essence -= price;
+      P.owned[it.id] = true;
+      SFX.levelup();
+      toast("Special Offer: <b>" + it.name + "</b> unlocked!");
+      P.dealId = null;
+      P.dealExpires = 0;
+      saveP();
+      checkShopDeal();
+      buildShop();
+      updateMenuChrome();
+      checkAch();
+    };
+  }
 }
 
 /* ============================================================
@@ -2391,6 +2793,13 @@ function frame(ts) {
   FX.update(dt);
   render();
   if (G.state === "play") refreshHud();
+  
+  // Update shop preview wiggler and timed discount timer when the shop overlay is active
+  if (G.state === "menu" && !$("shopScreen").classList.contains("hidden")) {
+    updateShopDealTimer();
+    renderShopPreview();
+  }
+  updateMutationPrompt();
 }
 
 function boot() {
@@ -2433,6 +2842,63 @@ function drawObject(c, o, t, z) {
   const danger = o.r > p.r * (1 + G.stats.biteSize);
   c.save();
   c.translate(o.x, o.y);
+
+  /* Draw visual mutation category vector above edible, non-dangerous consumable */
+  if (o.shape && o.shape !== "shard" && !danger && !P.settings.perf) {
+    c.save();
+    const hover = Math.sin(t * 4 + o.wob) * Math.max(1.8, o.r * 0.1);
+    c.translate(0, -o.r - Math.max(6, o.r * 0.3) + hover);
+    
+    if (o.shape === "blob") { // Organic: Sprout
+      c.fillStyle = "#00f5a0";
+      c.beginPath();
+      c.ellipse(-1.5, 0, 2.2, 1.4, -Math.PI/4, 0, TAU);
+      c.ellipse(1.5, 0, 2.2, 1.4, Math.PI/4, 0, TAU);
+      c.fill();
+      c.strokeStyle = "#00f5a0";
+      c.lineWidth = 0.8;
+      c.beginPath();
+      c.moveTo(0, 1.5);
+      c.quadraticCurveTo(0, 0, -0.8, -1.5);
+      c.stroke();
+    } else if (o.shape === "rect") { // Structural: Shield
+      c.fillStyle = "#ff9a3d";
+      c.beginPath();
+      c.moveTo(0, -3.2);
+      c.lineTo(3, -1.6);
+      c.lineTo(2.4, 1.6);
+      c.quadraticCurveTo(0, 3.2, 0, 3.2);
+      c.quadraticCurveTo(-2.4, 1.6, -2.4, 1.6);
+      c.lineTo(-3, -1.6);
+      c.closePath();
+      c.fill();
+      c.strokeStyle = "#9c5a24";
+      c.lineWidth = 0.8;
+      c.stroke();
+    } else if (o.shape === "poly") { // Kinetic: Spinning Propeller
+      c.save();
+      c.rotate(t * 8 + o.wob);
+      c.fillStyle = "#00bbf9";
+      c.fillRect(-4, -1, 8, 2);
+      c.beginPath(); c.arc(0, 0, 1.2, 0, TAU); c.fillStyle = "#fff"; c.fill();
+      c.restore();
+    } else if (o.shape === "glow") { // Cosmic: Rotating Galaxy Swirl
+      c.save();
+      c.rotate(t * 4 + o.wob);
+      c.strokeStyle = "#d946ef";
+      c.lineWidth = 0.9;
+      c.beginPath();
+      c.arc(0, 0, 2, 0, Math.PI);
+      c.stroke();
+      c.beginPath();
+      c.arc(0, 0, 3.5, Math.PI, Math.PI * 2);
+      c.stroke();
+      c.fillStyle = "#fff";
+      c.fillRect(-0.8, -0.8, 1.6, 1.6);
+      c.restore();
+    }
+    c.restore();
+  }
   /* threat ring */
   if (danger && o.shape !== "shard") {
     const pulse = 0.35 + 0.25 * Math.sin(t * 5 + o.wob);
