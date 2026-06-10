@@ -100,12 +100,12 @@ const EVOR = EVOS.map(e => e.r);
 
 /* ---------------- scale bands (background themes) ---------------- */
 const BANDS = [
-  { upTo: 3,  top: "#101622", bot: "#1d2b1e", deco: "micro",  name: "Petri Depths" },
-  { upTo: 7,  top: "#15202e", bot: "#2c2a1c", deco: "ground", name: "The Underfoot" },
-  { upTo: 10, top: "#1a2030", bot: "#2a2438", deco: "street", name: "The Streets" },
-  { upTo: 13, top: "#131a2e", bot: "#251d3a", deco: "city",   name: "Skyline" },
-  { upTo: 16, top: "#0a0d24", bot: "#1a0f33", deco: "planet", name: "Orbit" },
-  { upTo: 19, top: "#05050f", bot: "#120822", deco: "cosmos", name: "The Deep Void" }
+  { upTo: 3,  top: "#080c12", bot: "#0f1c1f", deco: "micro",  name: "Petri Depths" },
+  { upTo: 7,  top: "#0a1016", bot: "#13221e", deco: "ground", name: "The Underfoot" },
+  { upTo: 10, top: "#090d16", bot: "#0f1c24", deco: "street", name: "The Streets" },
+  { upTo: 13, top: "#070b12", bot: "#121b27", deco: "city",   name: "Skyline" },
+  { upTo: 16, top: "#04060d", bot: "#0b151f", deco: "planet", name: "Orbit" },
+  { upTo: 19, top: "#020307", bot: "#070e17", deco: "cosmos", name: "The Deep Void" }
 ];
 const bandFor = evo => BANDS.find(b => evo <= b.upTo);
 
@@ -253,7 +253,7 @@ const WORLDS = [
   { id:"pirate", name:"Pirate Ocean",   price:300,  grad:["#0e2230","#143a4a"], tint:"#3ab0c0",
     desc:"Loot every ship on the seven seas.",
     skin:{8:["Rowboat","Crab Pot","Driftwood","Buoy","Rum Barrel"],10:["Sloop","Palm Tree","Fishing Boat","Tiki Idol","Tide Pool"],11:["Brigantine","Whale","Beach Hut","Cannon","Jolly Roger"],12:["Galleon","Trading Post","Treasure Barge","Pirate Yacht","Lighthouse"],13:["Man-o-War","Rope Bridge","Pirate Cove","Kraken Wheel","Ghost Ship"],14:["Port Town","Volcano Isle","Reef Dam","Pirate Haven","Flagship"]} },
-  { id:"future", name:"Future Megacity",price:500,  grad:["#160f2e","#2a1448"], tint:"#c44dff",
+  { id:"future", name:"Future Megacity",price:500,  grad:["#0b131f","#112235"], tint:"#00f5d4",
     desc:"Neon, drones and chrome towers.",
     skin:{8:["Hoverboard","Servo Bot","Holo Bench","Neon Sign","Fuel Cell"],10:["Hovercar","Bio Tree","Cargo Drone","Chrome Statue","Plasma Fount"],11:["Maglev Bus","Hauler Mech","Pod House","Hover Tank","Holo Board"],12:["Arcology Pod","Synth Mall","Maglev Car","Sky Yacht","Data Tower"],13:["Chrome Spire","Sky Bridge","Neon Arena","Orbital Wheel","Star Freighter"],14:["Mega Block","Terraform Hill","Fusion Dam","Spaceport","Colony Ship"]} },
   { id:"alien", name:"Alien Planet",    price:800,  grad:["#0f2a1e","#26143a"], tint:"#7cff6b",
@@ -265,7 +265,7 @@ const WORLDS = [
 const SHOP = [];
 (function buildShop(){
   const skins = [
-    ["skin_void","Void Spawn","#c44dff",0],["skin_ember","Ember","#ff6a3a",40],["skin_toxin","Toxin","#7cff6b",40],
+    ["skin_void","Void Spawn","#00f5d4",0],["skin_ember","Ember","#ff6a3a",40],["skin_toxin","Toxin","#7cff6b",40],
     ["skin_abyss","Abyss","#3a6aff",60],["skin_blood","Blood Tide","#ff3a5e",60],["skin_gold","Gilded","#ffd04a",80],
     ["skin_frost","Frostbite","#8ae8ff",80],["skin_rose","Rose Horror","#ff7ad0",100],["skin_slate","Slate","#9aa0b0",100],
     ["skin_acid","Acid Rain","#c8ff3a",120],["skin_royal","Royal","#8a3aff",140],["skin_coral","Coral","#ff9a7a",140],
@@ -276,7 +276,7 @@ const SHOP = [];
   skins.forEach(s=>SHOP.push({id:s[0],type:"skins",name:s[1],color:s[2],price:+s[3],desc:"Hunger skin"}));
   const trails = [
     ["trail_none","No Trail","#666",0],["trail_spark","Sparks","#ffd04a",50],["trail_slime","Slime","#7cff6b",50],
-    ["trail_ember","Embers","#ff6a3a",80],["trail_frost","Frost","#8ae8ff",80],["trail_void","Void Wake","#c44dff",120],
+    ["trail_ember","Embers","#ff6a3a",80],["trail_frost","Frost","#8ae8ff",80],["trail_void","Void Wake","#00f5d4",120],
     ["trail_blood","Blood Drip","#ff3a5e",120],["trail_star","Stardust","#fff0a0",180],["trail_neon","Neon Stream","#3affd0",220],
     ["trail_galaxy","Galaxy Dust","#b09aff",300]
   ];
@@ -284,7 +284,7 @@ const SHOP = [];
   const perks = [
     ["perk_head","Head Start","Begin runs 15% larger",120,"#7cff6b"],
     ["perk_legs","Quick Spawn","+8% base speed",140,"#5ab8ff"],
-    ["perk_gut","Wide Gullet","+10% base attraction",140,"#c44dff"],
+    ["perk_gut","Wide Gullet","+10% base attraction",140,"#00f5d4"],
     ["perk_skin","Calloused Skin","-10% damage taken",160,"#ff9a3d"],
     ["perk_brain","Hungry Mind","+10% XP forever",180,"#ff7ad0"],
     ["perk_heart","Big Heart","+20 starting max HP",160,"#ff4d5e"],
@@ -536,10 +536,50 @@ function setPointer(e) {
   if (!t) return;
   INPUT.x = t.clientX; INPUT.y = t.clientY;
 }
+function triggerManualDash() {
+  if (G.state !== "play" || !G.player || G.run.runOver) return;
+  if (G.player.manualDashCd > 0) return;
+  G.player.manualDashCd = 1.5;
+  G.player.targetR = Math.max(EVOR[0] * 0.5, G.player.targetR * 0.98);
+  G.player.dashT = 0.35;
+  G.player.iframe = Math.max(G.player.iframe, 0.35);
+  SFX.ui();
+  AudioSys.blip(140, "sine", 0.8, 0.28, 540);
+  FX.ring(G.player.x, G.player.y, G.player.r * 2.8, "#00f5d4", 3);
+  for (let i = 0; i < 15; i++) {
+    const ang = G.player.faceA + Math.PI + rand(-0.6, 0.6);
+    const sp = G.player.r * rand(0.5, 1.2);
+    FX.parts.push({
+      x: G.player.x - Math.cos(G.player.faceA) * G.player.r * 0.8,
+      y: G.player.y - Math.sin(G.player.faceA) * G.player.r * 0.8,
+      vx: Math.cos(ang) * sp * 3.5,
+      vy: Math.sin(ang) * sp * 3.5,
+      r: G.player.r * rand(0.08, 0.16),
+      c: "#00f5d4",
+      life: 0.7,
+      decay: 1.6,
+      grav: 0
+    });
+  }
+}
 window.addEventListener("pointermove", e => { setPointer(e); INPUT.active = true; });
 window.addEventListener("pointerdown", e => { setPointer(e); INPUT.active = true; AudioSys.unlock(); });
-window.addEventListener("touchstart", e => { setPointer(e); INPUT.active = true; AudioSys.unlock(); }, { passive: true });
+let lastTap = 0;
+window.addEventListener("touchstart", e => {
+  setPointer(e);
+  INPUT.active = true;
+  AudioSys.unlock();
+  const now = Date.now();
+  if (now - lastTap < 280) triggerManualDash();
+  lastTap = now;
+}, { passive: true });
 window.addEventListener("touchmove", e => { setPointer(e); if (G.state === "play") e.preventDefault(); }, { passive: false });
+window.addEventListener("contextmenu", e => {
+  if (G.state === "play") {
+    e.preventDefault();
+    triggerManualDash();
+  }
+});
 
 /* ---------------- run stats (defaults + perks) ---------------- */
 function newRunStats() {
@@ -577,7 +617,8 @@ function startRun() {
   G.player = {
     x: 0, y: 0, vx: 0, vy: 0, r: startR, targetR: startR,
     mouth: 0, blink: 0, iframe: 0, hurtT: 0, rageT: 0, dashT: 0,
-    eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9
+    eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
+    manualDashCd: 0
   };
   G.objs = []; G.shots = []; G.boss = null; G.victoryCore = null;
   G.evoIndex = 0; G.level = 1; G.xp = 0; G.xpNeed = 14; G.pendingMutations = 0;
@@ -792,8 +833,8 @@ function shockwave() {
   const p = G.player, s = G.stats;
   SFX.shock(); FX.addShake(10);
   const R = p.r * 5 * s.shockSize;
-  FX.ring(p.x, p.y, R, "#c44dff", 5);
-  FX.burst(p.x, p.y, "#c44dff", 24, p.r * 0.08, p.r * 0.06, 0.7);
+  FX.ring(p.x, p.y, R, "#00f5d4", 5);
+  FX.burst(p.x, p.y, "#00f5d4", 24, p.r * 0.08, p.r * 0.06, 0.7);
   G.objs.forEach(o => {
     if (dist2(o.x, o.y, p.x, p.y) < R * R) {
       o.stun = Math.max(o.stun, 2.2);
@@ -968,7 +1009,6 @@ function pickUpgradeQuiet(u) {
   saveP();
   SFX.pick();
   FX.text(G.player.x, G.player.y - G.player.r * 1.3, "🧬 " + u.icon + " " + u.name, "#7cff6b", 1.25);
-  toast("🧬 Evolved! Auto-mutated: <b>" + u.name + "</b>");
   G.pendingMutations = Math.max(0, G.pendingMutations - 1);
   updateMutationPrompt();
   checkAch();
@@ -1000,14 +1040,14 @@ function evolveFanfare() {
     requestAnimationFrame(() => { $("evoFlash").style.transition = "opacity .9s"; $("evoFlash").style.opacity = 0; });
   }
   FX.ring(p.x, p.y, p.r * 6, "#ff4d9e", 7);
-  FX.ring(p.x, p.y, p.r * 9, "#c44dff", 4);
+  FX.ring(p.x, p.y, p.r * 9, "#00f5d4", 4);
   FX.burst(p.x, p.y, "#fff", 36, p.r * 0.1, p.r * 0.07, 1.1);
   if (G.stats.evoHeal) G.stats.hp = G.stats.maxHp;
   $("stageToastName").textContent = evo.name;
-  const t = $("stageToast"); t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
-  // band shift announcement
   const prevBand = bandFor(G.evoIndex - 1), band = bandFor(G.evoIndex);
-  if (band !== prevBand) toast("🌐 New scale: <b>" + band.name + "</b>");
+  const sLabel = $("stageToastScale");
+  if (sLabel) sLabel.textContent = band !== prevBand ? "New Scale: " + band.name : "Evolution";
+  const t = $("stageToast"); t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
   checkAch();
 }
 
@@ -1033,7 +1073,7 @@ function gameOver(cause) {
   G.state = "over";
   SFX.death();
   FX.addShake(24);
-  FX.burst(G.player.x, G.player.y, "#c44dff", 60, G.player.r * 0.08, G.player.r * 0.08, 1.4);
+  FX.burst(G.player.x, G.player.y, "#00f5d4", 60, G.player.r * 0.08, G.player.r * 0.08, 1.4);
   const { ess, newBest } = finishRunCommon();
   $("goScore").textContent = fmtInt(G.score);
   $("goEaten").textContent = fmtInt(G.eaten);
@@ -1151,6 +1191,12 @@ function refreshHud(force) {
     $("comboTimerBar").style.width = clamp(G.comboT / s.comboTime * 100, 0, 100) + "%";
   } else cb.classList.remove("show");
   if (G.boss) $("bossHpBar").style.width = clamp(G.boss.hp / G.boss.maxHp * 100, 0, 100) + "%";
+  const cdBar = $("dashCooldownBar");
+  if (cdBar) {
+    const cdRatio = G.player ? G.player.manualDashCd / 1.5 : 0;
+    cdBar.style.width = (1 - cdRatio) * 100 + "%";
+    cdBar.style.background = cdRatio > 0 ? "var(--warn)" : "var(--food)";
+  }
   updateMutationPrompt();
 }
 
@@ -1228,6 +1274,13 @@ window.addEventListener("keydown", e => {
     return;
   }
   
+  // Trigger manual dash
+  if (G.state === "play" && (e.key === "Shift" || (e.key && (e.key.toLowerCase() === "f" || e.key.toLowerCase() === "e")))) {
+    e.preventDefault();
+    triggerManualDash();
+    return;
+  }
+  
   // Normal Gameplay Pause
   if (G.state === "play" && (e.key === "Escape" || (e.key && e.key.toLowerCase() === "p"))) {
     togglePause();
@@ -1282,6 +1335,7 @@ function update(dt) {
   p.hurtT = Math.max(0, p.hurtT - dt);
   p.rageT = Math.max(0, p.rageT - dt);
   p.dashT = Math.max(0, p.dashT - dt);
+  p.manualDashCd = Math.max(0, p.manualDashCd - dt);
   p.biteCd = Math.max(0, (p.biteCd || 0) - dt);
   p.mouth = Math.max(0, p.mouth - dt * 3.2);
   s.hp = Math.min(s.maxHp, s.hp + s.regen * dt);
@@ -1662,7 +1716,7 @@ function render() {
         c.rotate(angle);
         
         const pulse = 1 + 0.2 * Math.sin(t * 12);
-        c.fillStyle = "#c44dff";
+        c.fillStyle = "#00f5d4";
         c.beginPath();
         c.moveTo(14 * pulse, 0);
         c.lineTo(-7 * pulse, -11 * pulse);
@@ -1672,7 +1726,7 @@ function render() {
         
         c.rotate(-angle);
         c.font = "bold 9px Inter, sans-serif";
-        c.fillStyle = "#c44dff";
+        c.fillStyle = "#00f5d4";
         c.textAlign = "center";
         c.strokeStyle = "rgba(0,0,0,0.7)";
         c.lineWidth = 2.5;
@@ -1806,7 +1860,7 @@ function renderMenuBg(c, t) {
     // Pulsing glowing background
     const pulse = 1 + 0.08 * Math.sin(t * 5);
     const rg = c.createRadialGradient(0, 0, mp.r * 0.2, 0, 0, mp.r * 2.4 * pulse);
-    rg.addColorStop(0, "rgba(196,77,255,0.22)");
+    rg.addColorStop(0, "rgba(0,245,212,0.22)");
     rg.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = rg;
     c.fillRect(-mp.r * 2.5, -mp.r * 2.5, mp.r * 5, mp.r * 5);
@@ -1821,7 +1875,7 @@ function renderMenuBg(c, t) {
       if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
     }
     c.closePath();
-    c.fillStyle = "#c44dff"; c.fill();
+    c.fillStyle = "#00f5d4"; c.fill();
     c.lineWidth = 1.5; c.strokeStyle = "rgba(0,0,0,0.4)"; c.stroke();
     
     // Draw tiny eyes tracking cursor
@@ -2301,7 +2355,7 @@ function drawCore(c, core, t) {
 function drawPlayer(c, t) {
   const p = G.player, evo = EVOS[G.evoIndex];
   const skin = SHOP.find(x => x.id === P.equippedSkin);
-  const col = skin ? skin.color : "#c44dff";
+  const col = skin ? skin.color : "#00f5d4";
   if (p.iframe > 0 && Math.floor(t * 14) % 2) return; // i-frame blink
   c.save();
   c.translate(p.x, p.y);
@@ -2320,7 +2374,7 @@ function drawPlayer(c, t) {
   if (G.state === "play" && G.stats.magnet > 1.0) {
     const magR = p.r * 2.6 * G.stats.magnet;
     const pulse = 1 + 0.02 * Math.sin(t * 4);
-    c.strokeStyle = "rgba(196,77,255,0.065)"; 
+    c.strokeStyle = "rgba(0,245,212,0.085)"; 
     c.lineWidth = 1.8 / camZoom();
     c.setLineDash([12 / camZoom(), 12 / camZoom()]);
     c.beginPath(); c.arc(0, 0, magR * pulse, 0, TAU); c.stroke();
