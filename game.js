@@ -1114,6 +1114,10 @@ function buildAmbient() {
 }
 
 function updateMutationPrompt() {
+  if (P.settings.autoMutate && G.pendingMutations > 0 && G.state === "play") {
+    while (G.pendingMutations > 0) autoMutateOne();
+    return;
+  }
   const wrap = $("mutationPromptWrap");
   if (!wrap) return;
   if (G.pendingMutations > 0 && G.state === "play") {
