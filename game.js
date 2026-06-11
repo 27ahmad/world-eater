@@ -46,14 +46,19 @@ const Save = (() => {
       maxEvo: 0, victories: 0, totalUpgrades: 0, totalTime: 0,
       owned: { skin_void: true, trail_none: true }, equippedSkin: "skin_void", equippedTrail: "trail_none",
       perks: {}, ach: {}, worlds: { city: true }, world: "city",
-      dealId: null, dealExpires: 0,
+      dealId: null, dealExpires: 0, tutorialDone: false,
       settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false }
     };
   }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) { const d = defaults(), s = JSON.parse(raw); return Object.assign(d, s, { settings: Object.assign(d.settings, s.settings || {}) }); }
+      if (raw) {
+        const d = defaults(), s = JSON.parse(raw);
+        const merged = Object.assign(d, s, { settings: Object.assign(d.settings, s.settings || {}) });
+        if (merged.runs > 0) merged.tutorialDone = true; // never tutor a veteran
+        return merged;
+      }
     } catch (e) { /* storage blocked */ }
     return mem ? mem : defaults();
   }
@@ -664,6 +669,10 @@ const AudioSys = (() => {
     combo(step) { blip(520 + Math.min(step, 40) * 26, "square", 0.3, 0.1, null); },
     shock() { blip(70, "sine", 0.8, 0.5, 28); noise(0.5, 0.4, 300, 0.8); },
     bossRoar() { blip(80, "sawtooth", 0.7, 1.0, 35); blip(120, "square", 0.4, 0.9, 50, 0.05); noise(0.5, 0.8, 200, 0.7); },
+    bossSting() { // minor-chord stab announcing the fight
+      [110, 130.8, 164.8].forEach((f, i) => { blip(f, "sawtooth", 0.34, 0.7, null, i * 0.04); blip(f * 2, "triangle", 0.16, 0.5, null, 0.12 + i * 0.04); });
+      noise(0.3, 0.6, 500, 0.8, 0.05);
+    },
     bossHit() { noise(0.3, 0.08, 900, 1.5); blip(220, "square", 0.2, 0.07, 120); },
     bossDie() { for (let i = 0; i < 6; i++) { noise(0.5, 0.3, 300 + i * 150, 1, i * 0.09); blip(160 - i * 18, "sawtooth", 0.4, 0.35, 40, i * 0.09); } },
     death() { blip(300, "sawtooth", 0.6, 1.4, 40); noise(0.5, 1.0, 200, 0.8, 0.1); },
@@ -672,43 +681,84 @@ const AudioSys = (() => {
     shard() { blip(1320, "sine", 0.25, 0.08, 1760); }
   };
 
-  /* --- generative music: dark pulse that intensifies with scale band --- */
-  const SCALES = [[0,3,5,7,10],[0,2,3,7,8],[0,3,7,10,14],[0,2,5,7,9],[0,2,4,7,9]];
-  const BAND_ROOTS = [55, 65.41, 58.27, 49.00, 43.65, 38.89]; // roots for Petri, Underfoot, Streets, Skyline, Orbit, Deep Void
+  /* --- generative music with a distinct identity per scale band --- */
+  /* one scale per band: Petri, Underfoot, Streets, Skyline, Orbit, Deep Void */
+  const SCALES = [[0,3,5,7,10],[0,2,3,7,8],[0,3,7,10,14],[0,2,5,7,9],[0,2,4,7,9],[0,1,3,7,8]];
+  const BAND_ROOTS = [55, 65.41, 58.27, 49.00, 43.65, 38.89];
+  /* signature 8-step motif per band (scale-degree index or null = rest) —
+     played every other bar so each band is recognizable, not repetitive */
+  const BAND_MOTIFS = [
+    [0, null, 2, null, 1, null, 3, null],     // Petri: sparse, curious drips
+    [0, 0, null, 2, null, 1, null, null],     // Underfoot: scuttling double-tap
+    [0, 2, 4, 2, 0, null, 3, null],           // Streets: restless runs
+    [4, null, 3, 2, null, 0, 2, null],        // Skyline: soaring descent
+    [0, null, null, 4, null, null, 2, null],  // Orbit: weightless intervals
+    [0, null, 1, null, 0, null, 1, 0]         // Deep Void: ominous half-step sway
+  ];
+  /* lead voice timbre per band: FM ratio, modulation depth, note length */
+  const BAND_TIMBRE = [
+    { ratio: 2.0, mod: 2.2, dur: 0.30 },  // soft, watery
+    { ratio: 3.0, mod: 1.6, dur: 0.22 },  // chitinous pluck
+    { ratio: 2.0, mod: 3.4, dur: 0.24 },  // electric buzz
+    { ratio: 1.5, mod: 2.8, dur: 0.34 },  // brassy
+    { ratio: 4.0, mod: 1.2, dur: 0.50 },  // glassy, airy
+    { ratio: 0.5, mod: 3.0, dur: 0.60 }   // dark, hollow
+  ];
+  const BOSS_MOTIF = [0, null, 1, 0, null, 1, null, 1]; // relentless half-step hammering
   let beat = 0;
   let lastMelodyNote = 5;
 
-  function playLeadNote(freq, dur, t) {
+  function playLeadNote(freq, dur, t, timbre) {
     if (!ctx) return;
+    const tb = timbre || BAND_TIMBRE[0];
     const carrier = ctx.createOscillator();
     const modulator = ctx.createOscillator();
     const modGain = ctx.createGain();
     const ampGain = ctx.createGain();
-    
+
     carrier.type = "sine";
     modulator.type = "sine";
-    
-    // Modulator frequency is harmonic (typically 2x or 3x carrier)
-    const ratio = 2.0;
-    modulator.frequency.setValueAtTime(freq * ratio, t);
+    modulator.frequency.setValueAtTime(freq * tb.ratio, t);
     carrier.frequency.setValueAtTime(freq, t);
-    
-    // Scale modulation index with player combo for more aggression / excitement
+
+    // combo feeds aggression into the lead voice
     const comboBonus = (typeof G !== "undefined" && G.combo > 5) ? Math.min(G.combo, 20) * 0.4 : 0;
-    const modPeak = freq * (2.8 + comboBonus);
-    
+    const modPeak = freq * (tb.mod + comboBonus);
+
     env(modGain, t, 0.008, modPeak, dur * 0.6, 0.0001);
     env(ampGain, t, 0.012, 0.12, dur, 0.0001);
-    
+
     modulator.connect(modGain);
     modGain.connect(carrier.frequency);
     carrier.connect(ampGain);
     ampGain.connect(musicGain);
-    
+
     modulator.start(t);
     carrier.start(t);
     modulator.stop(t + dur + 0.05);
     carrier.stop(t + dur + 0.05);
+  }
+  /* percussion for the boss theme, routed through musicGain */
+  function musicNoise(peak, dur, freq, q, t) {
+    if (!ctx) return;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = freq; f.Q.value = q || 1;
+    const g = ctx.createGain(); env(g, t, 0.003, peak, dur, 0.0001);
+    src.connect(f); f.connect(g); g.connect(musicGain);
+    src.start(t);
+  }
+  function musicKick(t, root) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(Math.max(root * 1.5, 50), t);
+    o.frequency.exponentialRampToValueAtTime(30, t + 0.16);
+    env(g, t, 0.004, 0.5, 0.18, 0.0001);
+    o.connect(g); g.connect(musicGain);
+    o.start(t); o.stop(t + 0.25);
   }
 
   function startMusic() {
@@ -728,24 +778,32 @@ const AudioSys = (() => {
       }
       const baseRoot = BAND_ROOTS[bandIdx];
       const scale = SCALES[Math.min(SCALES.length - 1, bandIdx)];
-      
-      // Determine chord progression based on state: Zen, Boss, or Standard
-      let progression = [0, 3, 7, 5]; // Standard minor: i - III - v - IV
-      if (inPlay && G.mode === "zen") {
-        progression = [0, 5, 7, 9]; // Zen pentatonic: I - IV - V - vi
-      } else if (inPlay && G.boss) {
-        progression = [0, 1, 0, -2]; // Boss tension: i - bII - i - bVII
-      }
-      
+      const timbre = BAND_TIMBRE[Math.min(BAND_TIMBRE.length - 1, bandIdx)];
+      const inBoss = inPlay && !!G.boss;
+      const finalBoss = inBoss && G.boss.def && G.boss.def.final;
+
+      // chord progression: zen drifts, bosses grind on the half-step, bands ride minor
+      let progression = [0, 3, 7, 5];
+      if (inPlay && G.mode === "zen") progression = [0, 5, 7, 9];
+      else if (inBoss) progression = [0, 1, 0, -2];
+
       const chordIdx = Math.floor(beat / 4) % 4;
-      const chordOffset = progression[chordIdx];
-      
-      // Chord root frequency
-      const root = baseRoot * Math.pow(2, chordOffset / 12);
+      const root = baseRoot * Math.pow(2, progression[chordIdx] / 12);
       const t = ctx.currentTime;
-      
-      // 1. Bass Pulse (Beats 0 and 2 of each 4-beat bar)
-      if (beat % 2 === 0) {
+      const stepInBar = beat % 4;
+      const motifStep = beat % 8;
+      const motifBar = Math.floor(beat / 8) % 2 === 0; // motif bar, then improvised bar
+
+      // 1. bass — steady pulse normally; driving ostinato during boss fights
+      if (inBoss) {
+        const bassStep = [0, 0, 1, 0][stepInBar]; // root-root-b2-root grind
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "triangle";
+        o.frequency.value = root * Math.pow(2, bassStep / 12);
+        env(g, t, 0.01, 0.4, 0.22, 0.0001);
+        o.connect(g); g.connect(musicGain);
+        o.start(t); o.stop(t + 0.3);
+      } else if (beat % 2 === 0) {
         const o = ctx.createOscillator(), g = ctx.createGain();
         o.type = "sine";
         o.frequency.value = root;
@@ -753,38 +811,46 @@ const AudioSys = (() => {
         o.connect(g); g.connect(musicGain);
         o.start(t); o.stop(t + 0.5);
       }
-      
-      // 2. Structured Generative Melody using FM Lead Synth
-      const stepInBar = beat % 4;
-      // High chance to play lead notes on first and third beats, moderate on offbeats
-      const playProb = (stepInBar === 0) ? 0.95 : (stepInBar === 2 ? 0.8 : 0.5);
-      if (Math.random() < playProb + intensity * 0.15) {
-        let noteOffset = 0;
-        if (stepInBar === 0) {
-          // Resolve melody back to chord root (octave transposed)
-          noteOffset = scale[0] + 12;
-        } else {
-          // Procedural random walk inside the pentatonic scale to ensure pleasant melodies
-          const options = [-2, -1, 1, 2];
-          lastMelodyNote = clamp(lastMelodyNote + pick(options), 0, scale.length * 2 - 1);
-          const sIdx = lastMelodyNote % scale.length;
-          const octave = Math.floor(lastMelodyNote / scale.length);
-          noteOffset = scale[sIdx] + 12 * (octave + 1);
+
+      // 2. boss percussion — kick on the downbeats, hats driving over the top
+      if (inBoss) {
+        if (stepInBar === 0 || stepInBar === 2) musicKick(t, root);
+        musicNoise(0.06, 0.03, 6500, 2, t);
+        if (finalBoss) musicNoise(0.05, 0.025, 8000, 2, t + 0.5 * 0.001); // double feel for the finale
+      }
+
+      // 3. lead — the band's signature motif on motif bars, improvisation between
+      if (inBoss) {
+        const deg = BOSS_MOTIF[motifStep];
+        if (deg !== null) {
+          const noteOffset = scale[deg % scale.length] + 12;
+          playLeadNote(root * Math.pow(2, noteOffset / 12), 0.16, t, { ratio: 2, mod: 4.2, dur: 0.16 });
         }
-        
-        const noteFreq = root * Math.pow(2, noteOffset / 12);
-        playLeadNote(noteFreq, 0.28, t);
-        
-        // Syncopated secondary note for rhythmic syncopation on off-beats
-        if ((stepInBar === 2 || stepInBar === 3) && Math.random() < 0.35 + intensity * 0.25) {
-          const bounceOffset = noteOffset + pick([-2, 2, 3]);
-          const bounceFreq = root * Math.pow(2, bounceOffset / 12);
-          playLeadNote(bounceFreq, 0.14, t + 0.15);
+      } else if (motifBar) {
+        const motif = BAND_MOTIFS[Math.min(BAND_MOTIFS.length - 1, bandIdx)];
+        const deg = motif[motifStep];
+        if (deg !== null) {
+          const noteOffset = scale[deg % scale.length] + 12 * (1 + Math.floor(deg / scale.length));
+          playLeadNote(root * Math.pow(2, noteOffset / 12), timbre.dur, t, timbre);
+        }
+      } else {
+        const playProb = (stepInBar === 0) ? 0.9 : (stepInBar === 2 ? 0.7 : 0.45);
+        if (Math.random() < playProb + intensity * 0.15) {
+          let noteOffset;
+          if (stepInBar === 0) noteOffset = scale[0] + 12;
+          else {
+            lastMelodyNote = clamp(lastMelodyNote + pick([-2, -1, 1, 2]), 0, scale.length * 2 - 1);
+            noteOffset = scale[lastMelodyNote % scale.length] + 12 * (Math.floor(lastMelodyNote / scale.length) + 1);
+          }
+          playLeadNote(root * Math.pow(2, noteOffset / 12), timbre.dur, t, timbre);
+          if ((stepInBar === 2 || stepInBar === 3) && Math.random() < 0.35 + intensity * 0.25) {
+            playLeadNote(root * Math.pow(2, (noteOffset + pick([-2, 2, 3])) / 12), timbre.dur * 0.5, t + 0.15, timbre);
+          }
         }
       }
-      
-      // 3. Airy Ambient Pad every 8 beats
-      if (beat % 8 === 0) {
+
+      // 4. airy ambient pad every 8 beats (rests during boss fights)
+      if (!inBoss && beat % 8 === 0) {
         const f = root * 2 * Math.pow(2, pick(scale) / 12);
         const o = ctx.createOscillator(), g = ctx.createGain();
         o.type = "sine";
@@ -793,7 +859,7 @@ const AudioSys = (() => {
         o.connect(g); g.connect(musicGain);
         o.start(t); o.stop(t + 3.5);
       }
-      
+
       beat++;
     };
     const loop = () => {
@@ -801,8 +867,8 @@ const AudioSys = (() => {
       // Speeds up tempo based on evolution stage and boss fight states
       const inPlay = (typeof G !== "undefined" && G.state === "play");
       const intensity = inPlay ? G.evoIndex / 19 : 0;
-      const speedUp = inPlay && G.boss ? 0.25 : 0;
-      const stepDuration = Math.max(160, 310 - (intensity + speedUp) * 115);
+      const speedUp = inPlay && G.boss ? (G.boss.def && G.boss.def.final ? 0.45 : 0.25) : 0;
+      const stepDuration = Math.max(150, 310 - (intensity + speedUp) * 115);
       musicTimer = setTimeout(loop, stepDuration);
     };
     loop();
@@ -951,6 +1017,7 @@ function setPointer(e) {
 function triggerManualDash() {
   if (G.state !== "play" || !G.player || G.run.runOver) return;
   if (G.player.manualDashCd > 0) return;
+  if (G.tut) G.tut.dashed = true;
   G.player.manualDashCd = 1.5;
   G.player.targetR = Math.max(EVOR[0] * 0.5, G.player.targetR * 0.98);
   G.player.dashT = 0.35;
@@ -1068,6 +1135,8 @@ function startRun() {
   setTimeout(() => { $("hint").style.display = "none"; }, 6000);
   G.state = "play";
   for (let i = 0; i < startMutations; i++) autoMutateOne();
+  if (!P.tutorialDone) tutStart();
+  else { G.tut = null; hide("tutChip"); }
   checkBossSpawn();
   refreshHud(true);
 }
@@ -1165,6 +1234,59 @@ function spawnMeteor() {
   G.shots.push({ x: sx, y: sy, vx: (tx - sx) / dd * sp, vy: (ty - sy) / dd * sp,
     r: p.r * rand(0.2, 0.32), life: 2.8, c: "#ff8a4a", meteor: true, dmg: 12 });
 }
+/* ---------------- guided first run ----------------
+   Contextual, non-blocking objectives shown only until the player has
+   completed them once. Replaces the generic hint on the first run. */
+const TUT_STEPS = [
+  { text: "Drag, or use WASD, to move", test: () => G.tut.moved > G.player.r * 8 },
+  { text: "Devour 5 things smaller than you", test: () => G.eaten - G.tut.eats0 >= 5 },
+  { text: "Fill the teal bar — mutations choose themselves from your diet", test: () => G.level >= 2 },
+  { text: "Press Space, or double-tap, to dash", test: () => G.tut.dashed },
+  { text: "Keep eating until you evolve", test: () => G.evoIndex >= 1 || G.mode === "rush" },
+  { text: "A rival is coming — bite it once you match its size", needsBoss: true, test: () => G.tut.bossBitten }
+];
+function tutStart() {
+  G.tut = { step: 0, moved: 0, eats0: G.eaten, dashed: false, bossBitten: false, doneT: 0, lastX: null, lastY: 0 };
+  $("tutLabel").textContent = "First Hunt · 1/" + TUT_STEPS.length;
+  $("tutText").textContent = TUT_STEPS[0].text;
+  const chip = $("tutChip");
+  chip.classList.remove("hidden", "done");
+  $("hint").style.display = "none";
+}
+function tutUpdate(dt) {
+  const T = G.tut;
+  if (!T) return;
+  const p = G.player;
+  if (T.lastX !== null) T.moved += Math.hypot(p.x - T.lastX, p.y - T.lastY);
+  T.lastX = p.x; T.lastY = p.y;
+  if (T.doneT > 0) {
+    T.doneT -= dt;
+    if (T.doneT <= 0) {
+      T.step++;
+      const st = TUT_STEPS[T.step];
+      if (!st || (st.needsBoss && G.mode === "zen")) { tutFinish(); return; }
+      $("tutChip").classList.remove("done");
+      $("tutLabel").textContent = "First Hunt · " + (T.step + 1) + "/" + TUT_STEPS.length;
+      $("tutText").textContent = st.text;
+    }
+    return;
+  }
+  let ok = false;
+  try { ok = TUT_STEPS[T.step].test(); } catch (e) {}
+  if (ok) {
+    T.doneT = 0.9;
+    $("tutChip").classList.add("done");
+    SFX.pick();
+  }
+}
+function tutFinish() {
+  G.tut = null;
+  P.tutorialDone = true;
+  saveP();
+  hide("tutChip");
+  toast("You know the Hunger now — devour everything", "info", "First Hunt Complete");
+}
+
 function updateWorldEvents(dt) {
   if (G.boss) return; // events stay out of boss fights
   if (G.event) {
@@ -1187,6 +1309,7 @@ function updateWorldEvents(dt) {
 function spawnBoss(bdef) {
   if (G.mode === "zen") return;
   SFX.bossRoar();
+  SFX.bossSting();
   FX.addShake(20);
   const p = G.player;
   const ang = Math.random() * TAU;
@@ -2038,8 +2161,9 @@ function update(dt) {
     if (p.r >= c.r * 0.9 && d < p.r + c.r * 0.65) { G.victoryCore = null; victory(); return; }
   }
 
-  /* ---- world events ---- */
+  /* ---- world events / first-run guide ---- */
   updateWorldEvents(dt);
+  tutUpdate(dt);
 
   /* ---- spawn maintenance ---- */
   const maxObjs = P.settings.perf ? 80 : 130;
@@ -2171,6 +2295,7 @@ function updateBoss(wdt, dt) {
   if (d < p.r * 0.85 + b.r * 0.8) {
     if (canBite && p.biteCd <= 0) {
       p.biteCd = 0.3;
+      if (G.tut) G.tut.bossBitten = true;
       const dmg = (6 + p.r * 0.085) * s.bossDmg;
       bossDamage(dmg);
       if (G.fusions && G.fusions.reaverRage && p.rageT > 0) {
