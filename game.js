@@ -1137,7 +1137,7 @@ function startWorldEvent() {
   const type = G.mode === "zen" ? "golden" : pick(["golden", "golden", "meteor"]);
   if (type === "golden") {
     G.event = { type, t: 12 };
-    toast("✨ <b>Golden Swarm</b> — everything gold is worth triple!");
+    toast("A <b>Golden Swarm</b> drifts by — gold is worth triple", "gold", "Event");
     SFX.levelup();
     const p = G.player, vr = viewRadius();
     for (let i = 0; i < 10; i++) {
@@ -1150,7 +1150,7 @@ function startWorldEvent() {
     }
   } else {
     G.event = { type, t: 9, spawnT: 0.4 };
-    toast("☄️ <b>Meteor Storm</b> — dodge the debris!");
+    toast("<b>Meteor Storm</b> inbound — dodge the debris", "danger", "Event");
     SFX.crunch();
     FX.addShake(8);
   }
@@ -1241,7 +1241,7 @@ function killBoss() {
   growBy(b.r * 0.4);
   // food explosion
   for (let i = 0; i < 10; i++) spawnShard(b.x + rand(-b.r, b.r), b.y + rand(-b.r, b.r), G.xpNeed * 0.08);
-  toast("<b>" + b.name + "</b> devoured! +" + fmtInt(reward));
+  toast("<b>" + b.name + "</b> devoured · +" + fmtInt(reward) + " score", "success", "Boss Down");
   $("bossWrap").style.display = "none";
   if (G.mode === "rush") {
     G.rushBossIndex = (G.rushBossIndex || 0) + 1;
@@ -1249,7 +1249,7 @@ function killBoss() {
     checkAch();
     if (G.rushBossIndex >= BOSSES.length) {
       G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
-      toast("Boss Rush Conquered! Consume the Core to win.");
+      toast("Boss Rush conquered — consume the Core to win", "gold", "Objective");
     } else {
       checkBossSpawn();
     }
@@ -1259,10 +1259,10 @@ function killBoss() {
     if (G.mode === "endless") {
       G.endlessCycle = (G.endlessCycle || 0) + 1;
       for (let k in G.run.bossKilled) delete G.run.bossKilled[k];
-      toast("Boss cycle restarted! Endless Scale " + (G.endlessCycle + 1));
+      toast("The ladder begins again — Cycle " + (G.endlessCycle + 1), "info", "Endless");
     } else {
       G.victoryCore = { x: b.x, y: b.y, r: G.player.r * 0.8, t: 0 };
-      toast("The <b>Universe Core</b> is exposed. Consume it.");
+      toast("The <b>Universe Core</b> is exposed — consume it", "gold", "Objective");
     }
   }
   G.boss = null;
@@ -1411,7 +1411,7 @@ function hurt(amount, srcName, srcX, srcY) {
     if (s.cheatDeath > 0) {
       s.cheatDeath--; s.hp = s.maxHp * 0.5;
       FX.flash = 0.8; FX.ring(p.x, p.y, p.r * 6, "#fff0a0", 6);
-      toast("<b>Guardian Angel</b> saved you!");
+      toast("<b>Guardian Angel</b> pulled you back", "success", "Revived");
       SFX.levelup();
       return;
     }
@@ -1465,7 +1465,7 @@ function triggerFusionUnlock(title, desc) {
   SFX.levelup();
   FX.flash = 0.6;
   if (G.player) FX.ring(G.player.x, G.player.y, G.player.r * 4, "#00f5d4", 6);
-  toast("<b>FUSION UNLOCKED: " + title + "</b><br>" + desc);
+  toast("<b>" + title + "</b><br>" + desc, "gold", "Fusion Unlocked");
 }
 
 function checkBossSpawn() {
@@ -1533,7 +1533,7 @@ function pickUpgradeQuiet(u) {
   SFX.pick();
   FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#7cff6b", 1.25);
   if (u.rarity === "legend" || u.rarity === "epic") {
-    toast("🧬 Mutated: <b>" + u.name + "</b><br>" + u.desc);
+    toast("<b>" + u.name + "</b><br>" + u.desc, "success", "Mutation");
   }
   checkAch();
 }
@@ -1644,7 +1644,7 @@ function checkAch() {
     if (ok) {
       P.ach[a.id] = true; P.essence += a.reward; dirty = true;
       const delay = Math.min(achToastQueue++ * 350, 2400);
-      setTimeout(() => { toast(a.icon + " <b>" + a.name + "</b><br>+" + a.reward + " essence"); achToastQueue = Math.max(0, achToastQueue - 1); }, delay);
+      setTimeout(() => { toast("<b>" + a.name + "</b><br>+" + a.reward + " essence", "gold", "Feat"); achToastQueue = Math.max(0, achToastQueue - 1); }, delay);
     }
   }
   if (dirty) saveP();
@@ -1656,14 +1656,15 @@ function checkAch() {
 function show(id) { $(id).classList.remove("hidden"); }
 function hide(id) { $(id).classList.add("hidden"); }
 function hideAll(ids) { ids.forEach(hide); }
-function toast(html) {
+/* typed notifications: type ∈ success | info | danger | gold, label is a small-caps category tag */
+function toast(html, type, label) {
   const wrap = $("toasts");
   const t = document.createElement("div");
-  t.className = "toast";
-  t.innerHTML = html;
+  t.className = "toast t-" + (type || "success");
+  t.innerHTML = (label ? '<div class="tl">' + label + '</div>' : "") + '<div class="tx">' + html + '</div>';
   wrap.appendChild(t);
-  while (wrap.children.length > 4) wrap.removeChild(wrap.firstChild);
-  setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 4200);
+  while (wrap.children.length > 3) wrap.removeChild(wrap.firstChild);
+  setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 3800);
 }
 
 /* ---------------- ambient background ---------------- */
@@ -1728,7 +1729,7 @@ window.addEventListener("keydown", e => {
     P.settings.muted = !P.settings.muted;
     AudioSys.applyVolumes();
     saveP();
-    toast(P.settings.muted ? "Sound Muted" : "Sound Unmuted");
+    toast(P.settings.muted ? "Sound muted" : "Sound on", "info", "Audio");
     return;
   }
   
@@ -2068,10 +2069,10 @@ function updateBoss(wdt, dt) {
     b.shootT = Math.min(b.shootT, 1.2);
     if (b.def.final) {
       const names = ["RADIANCE", "COLLAPSE", "SUPERNOVA"];
-      toast("🌟 <b>" + b.name + "</b> enters <b>" + names[targetPhase] + "</b>");
+      toast("<b>" + b.name + "</b> enters <b>" + names[targetPhase] + "</b>", "danger", "Final Phase");
       FX.flash = 0.5;
     } else {
-      toast("<b>" + b.name + "</b> " + (targetPhase === 1 ? "grows furious!" : "is enraged!"));
+      toast("<b>" + b.name + "</b> " + (targetPhase === 1 ? "grows furious" : "is enraged"), "danger", "Threat");
     }
   }
   const rage = 1 + 0.18 * b.phaseIdx;
@@ -2160,7 +2161,7 @@ function updateBoss(wdt, dt) {
     b.didSplit = true;
     for (let i = 0; i < 6; i++) spawnShard(b.x + rand(-b.r, b.r) * 1.4, b.y + rand(-b.r, b.r) * 1.4, G.xpNeed * 0.06);
     FX.burst(b.x, b.y, b.color, 30, b.r * 0.05, b.r * 0.06, 0.9);
-    toast("💥 <b>" + b.name + "</b> ruptures!");
+    toast("<b>" + b.name + "</b> ruptures — feed on the shards", "danger", "Threat");
   }
   /* feed the fight: bosses periodically shed edible shards so you can grow */
   b.shedT = (b.shedT || 3) - wdt;
@@ -2580,8 +2581,8 @@ function buildWorldGrid() {
         : '<span class="essence-chip">' + w.price + "</span>") + "</div>";
     card.onclick = () => {
       if (owned) { P.world = w.id; SFX.ui(); }
-      else if (P.essence >= w.price) { P.essence -= w.price; P.worlds[w.id] = true; P.world = w.id; SFX.levelup(); toast("🌍 <b>" + w.name + "</b> unlocked!"); }
-      else { SFX.hurt(); toast("Need <b>" + (w.price - P.essence) + "</b> more essence"); return; }
+      else if (P.essence >= w.price) { P.essence -= w.price; P.worlds[w.id] = true; P.world = w.id; SFX.levelup(); toast("<b>" + w.name + "</b> is yours to devour", "success", "World Unlocked"); }
+      else { SFX.hurt(); toast("Need <b>" + (w.price - P.essence) + "</b> more essence", "danger", "Shop"); return; }
       saveP(); buildWorldGrid(); updateMenuChrome(); checkAch();
     };
     grid.appendChild(card);
@@ -2618,9 +2619,9 @@ function buildShop() {
         
     card.onclick = () => {
       if (!owned) {
-        if (P.essence < it.price) { SFX.hurt(); toast("Need <b>" + (it.price - P.essence) + "</b> more essence"); return; }
+        if (P.essence < it.price) { SFX.hurt(); toast("Need <b>" + (it.price - P.essence) + "</b> more essence", "danger", "Shop"); return; }
         P.essence -= it.price; P.owned[it.id] = true; SFX.levelup();
-        toast("Unlocked: <b>" + it.name + "</b>!");
+        toast("<b>" + it.name + "</b> added to your collection", "success", "Unlocked");
       } else SFX.ui();
       if (it.type === "skins") P.equippedSkin = it.id;
       if (it.type === "trails") P.equippedTrail = it.id;
@@ -2677,7 +2678,7 @@ function bindSettings() {
     if (!armed) { armed = true; $("sReset").textContent = "Sure?"; setTimeout(() => { armed = false; $("sReset").textContent = "Reset"; }, 2500); return; }
     Save.wipe(); P = Save.defaults();
     applySettingsToUI(); updateMenuChrome(); buildWorldGrid(); buildShop(); buildAchList();
-    toast("Save erased. The Hunger forgets.");
+    toast("Save erased — the Hunger forgets", "danger", "Reset");
   });
 }
 
@@ -2736,13 +2737,13 @@ function bindUI() {
       const price = Math.max(1, Math.floor(it.price * 0.75));
       if (P.essence < price) {
         SFX.hurt();
-        toast("Need <b>" + (price - P.essence) + "</b> more essence");
+        toast("Need <b>" + (price - P.essence) + "</b> more essence", "danger", "Shop");
         return;
       }
       P.essence -= price;
       P.owned[it.id] = true;
       SFX.levelup();
-      toast("Special Offer: <b>" + it.name + "</b> unlocked!");
+      toast("<b>" + it.name + "</b> claimed at a discount", "success", "Unlocked");
       P.dealId = null;
       P.dealExpires = 0;
       saveP();
