@@ -6,6 +6,7 @@ A self-contained HTML5 canvas browser game. Eat and grow from a microscopic mote
 Play the game here: https://27ahmad.github.io/world-eater/
 
 ## Controls
+- Your first run is guided by the **First Hunt** objectives; after that you're on your own.
 - Drag or move mouse (or WASD / arrow keys) to move the player mote.
 - Devour objects smaller than you to grow.
 - Mutations happen automatically on level-up, chosen to match what you eat most.

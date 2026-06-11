@@ -133,6 +133,14 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
 @keyframes toastOut{to{opacity:0;transform:translateX(24px)}}
 #hint{position:absolute;bottom:max(20px,env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:var(--dim);
   font-size:.95em;letter-spacing:.12em;text-transform:uppercase;animation:hintFade 2s ease-in-out infinite alternate}
+#tutChip{position:absolute;bottom:max(22px,calc(env(safe-area-inset-bottom) + 14px));left:50%;transform:translateX(-50%);
+  max-width:min(420px,88vw);text-align:center;background:rgba(13,21,32,.92);border:1px solid var(--line);
+  border-bottom:2px solid var(--hunger);border-radius:12px;padding:9px 20px 10px;backdrop-filter:blur(8px);
+  box-shadow:0 8px 24px rgba(0,0,0,.45);transition:border-color .25s, box-shadow .25s}
+#tutChip .tl{font-size:8.5px;font-weight:800;letter-spacing:.22em;text-transform:uppercase;color:var(--hunger);margin-bottom:3px}
+#tutChip .tx{font-size:13px;font-weight:600;color:var(--bone);line-height:1.4}
+#tutChip.done{border-bottom-color:var(--food);box-shadow:0 8px 24px rgba(0,0,0,.45), 0 0 16px rgba(0,245,160,.25)}
+#tutChip.done .tl{color:var(--food)}
 @keyframes hintFade{from{opacity:.4}to{opacity:.95}}
 #vignette{position:fixed;inset:0;pointer-events:none;z-index:15;box-shadow:inset 0 0 140px rgba(0,0,0,.55);transition:box-shadow .3s}
 #dmgFlash{position:fixed;inset:0;pointer-events:none;z-index:16;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,40,60,.45));opacity:0}
@@ -246,6 +254,7 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   <div id="bossToast"><div class="small" id="bossToastLabel">WARNING</div><div class="big" id="bossToastName">ALPHA PHAGE</div></div>
   <div id="toasts"></div>
   <div id="hint">Drag or move mouse &middot; devour everything smaller &middot; Space / double-tap to dash</div>
+  <div id="tutChip" class="hidden"><div class="tl" id="tutLabel">First Hunt · 1/6</div><div class="tx" id="tutText">Drag, or use WASD, to move</div></div>
 </div>
 
 <!-- MAIN MENU -->
@@ -389,6 +398,6 @@ input[type=range]{width:140px;accent-color:var(--hunger)}
   </div>
 </div>
 
-<script src="game.js?v=7"></script>
+<script src="game.js?v=8"></script>
 </body>
 </html>
