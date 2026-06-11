@@ -812,12 +812,70 @@ const AudioSys = (() => {
 const SFX = new Proxy({}, { get: (_, k) => (...a) => { try { if (AudioSys.ready) AudioSys.SFX[k](...a); } catch (e) {} } });
 
 /* ============================================================
+   PERFORMANCE — glow sprite cache + adaptive quality governor
+============================================================ */
+/* Radial gradients are expensive to build every frame (late game is ~100 glow
+   objects + auras per frame on a phone GPU). Render each glow color once to a
+   small offscreen sprite, then drawImage it scaled — orders of magnitude cheaper. */
+const GlowCache = (() => {
+  const cache = new Map();
+  function transparent(color) {
+    if (color[0] === "#") return hexA(color, 0);
+    if (color.startsWith("hsl(")) return color.replace("hsl(", "hsla(").replace(")", ",0)");
+    return "rgba(0,0,0,0)";
+  }
+  return function sprite(color) {
+    let s = cache.get(color);
+    if (!s) {
+      s = document.createElement("canvas");
+      s.width = s.height = 64;
+      const g = s.getContext("2d");
+      const rg = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+      rg.addColorStop(0, color);
+      rg.addColorStop(0.55, color);
+      rg.addColorStop(1, transparent(color));
+      g.fillStyle = rg;
+      g.beginPath(); g.arc(32, 32, 32, 0, TAU); g.fill();
+      cache.set(color, s);
+    }
+    return s;
+  };
+})();
+/* draw a soft glow centered at (x, y); call inside the current transform */
+function drawGlow(c, color, x, y, r, alpha) {
+  c.globalAlpha = alpha;
+  c.drawImage(GlowCache(color), x - r, y - r, r * 2, r * 2);
+  c.globalAlpha = 1;
+}
+
+/* Watches real frame times and steps render quality down when the device
+   struggles (and back up when it recovers) so the game never lags on phones. */
+const Quality = {
+  level: 0, acc: 0, n: 0, cool: 0,
+  dprCap() { return [2, 1.5, 1.25, 1][this.level]; },
+  partCap() { return [520, 340, 220, 140][this.level]; },
+  sample(rawDt) {
+    if (rawDt > 0.25 || rawDt <= 0) return; // backgrounded tab / clock jump
+    this.acc += rawDt; this.n++;
+    this.cool -= rawDt;
+    if (this.n >= 60) {
+      const avg = this.acc / this.n;
+      this.acc = 0; this.n = 0;
+      if (this.cool <= 0) {
+        if (avg > 0.024 && this.level < 3) { this.level++; this.cool = 3; resize(); }
+        else if (avg < 0.014 && this.level > 0) { this.level--; this.cool = 8; resize(); }
+      }
+    }
+  }
+};
+
+/* ============================================================
    FX — particles, floating text, screen shake, hit-stop
 ============================================================ */
 const FX = {
   parts: [], texts: [], rings: [],
   shake: 0, hitstop: 0, flash: 0,
-  cap() { return P.settings.perf ? 160 : (P.settings.reduced ? 220 : 520); },
+  cap() { return Math.min(P.settings.perf ? 160 : (P.settings.reduced ? 220 : 520), Quality.partCap()); },
   burst(x, y, color, n, speed, size, life) {
     if (P.settings.reduced) n = Math.ceil(n * 0.4);
     if (P.settings.perf) n = Math.ceil(n * 0.55);
@@ -866,7 +924,7 @@ const canvas = $("game");
 const ctx2d = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 function resize() {
-  DPR = P.settings.perf ? 1 : Math.min(window.devicePixelRatio || 1, 2);
+  DPR = P.settings.perf ? 1 : Math.min(window.devicePixelRatio || 1, Quality.dprCap());
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
@@ -2178,11 +2236,8 @@ function render() {
       const y = mod(nb.v * H * 1.6 - p.y * z * 0.06, H * 1.6) - H * 0.3;
       const r = Math.min(W, H) * nb.s;
       const cosmic = clamp((G.evoIndex - 10) / 9, 0, 1);
-      const rg = c.createRadialGradient(x, y, 0, x, y, r);
-      rg.addColorStop(0, "hsla(" + ((nb.hue + G.evoIndex * 14) % 360) + ",60%," + (24 + cosmic * 18) + "%,0.10)");
-      rg.addColorStop(1, "rgba(0,0,0,0)");
-      c.fillStyle = rg;
-      c.fillRect(x - r, y - r, r * 2, r * 2);
+      const hue = Math.round((nb.hue + G.evoIndex * 14) % 360 / 12) * 12; // quantize so the sprite cache stays small
+      drawGlow(c, "hsl(" + hue + ",60%," + Math.round(24 + cosmic * 18) + "%)", x, y, r, 0.10);
     }
   }
   /* parallax motes / stars */
@@ -2465,11 +2520,7 @@ function renderMenuBg(c, t) {
     
     // Pulsing glowing background
     const pulse = 1 + 0.08 * Math.sin(t * 5);
-    const rg = c.createRadialGradient(0, 0, mp.r * 0.2, 0, 0, mp.r * 2.4 * pulse);
-    rg.addColorStop(0, "rgba(0,245,212,0.22)");
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-mp.r * 2.5, -mp.r * 2.5, mp.r * 5, mp.r * 5);
+    drawGlow(c, "#00f5d4", 0, 0, mp.r * 2.4 * pulse, 0.22);
     
     // Draw cute blob body
     c.beginPath();
@@ -2710,9 +2761,11 @@ let lastT = 0;
 function frame(ts) {
   requestAnimationFrame(frame);
   const now = ts / 1000;
-  let dt = Math.min(now - lastT, 0.05);
+  const rawDt = now - lastT;
+  let dt = Math.min(rawDt, 0.05);
   if (!(dt > 0)) dt = 0.016;
   lastT = now;
+  if (G.state === "play") Quality.sample(rawDt);
   if (FX.hitstop > 0) { FX.hitstop -= dt; dt *= 0.1; }
   if (G.slowmoT > 0 && G.state === "play") { G.slowmoT -= dt; dt *= 0.35; }
   if (G.state === "play") update(dt);
@@ -2894,13 +2947,7 @@ function drawObject(c, o, t, z) {
   }
   if (o.shape === "glow") {
     const blackHole = o.name === "Black Hole" || o.name === "Wormhole" || o.name === "Dark Matter Cloud";
-    if (!P.settings.perf) {
-      const rg = c.createRadialGradient(0, 0, o.r * 0.2, 0, 0, o.r * 1.9);
-      rg.addColorStop(0, hexA(col, blackHole ? 0.5 : 0.55));
-      rg.addColorStop(1, "rgba(0,0,0,0)");
-      c.fillStyle = rg;
-      c.fillRect(-o.r * 1.9, -o.r * 1.9, o.r * 3.8, o.r * 3.8);
-    }
+    if (!P.settings.perf) drawGlow(c, col, 0, 0, o.r * 1.9, blackHole ? 0.5 : 0.55);
     if (blackHole) {
       c.fillStyle = "#05030a";
       c.beginPath(); c.arc(0, 0, o.r * 0.85, 0, TAU); c.fill();
@@ -2960,11 +3007,7 @@ function drawObject(c, o, t, z) {
   }
   /* blob (creatures + organic) */
   if (o.golden && !P.settings.perf) { // golden swarm shimmer
-    const rg = c.createRadialGradient(0, 0, o.r * 0.3, 0, 0, o.r * 2);
-    rg.addColorStop(0, "rgba(255,208,74," + (0.3 + 0.12 * Math.sin(t * 6 + o.wob)) + ")");
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-o.r * 2, -o.r * 2, o.r * 4, o.r * 4);
+    drawGlow(c, "#ffd04a", 0, 0, o.r * 2, 0.3 + 0.12 * Math.sin(t * 6 + o.wob));
   }
   blobPath(c, o.r, t, o.wob, 9, o.ai ? 0.09 : 0.06);
   c.fillStyle = col; c.fill();
@@ -3020,11 +3063,7 @@ function drawBoss(c, b, t) {
   /* aura — burns hotter with each phase */
   if (!P.settings.perf) {
     const ph = b.phaseIdx || 0;
-    const rg = c.createRadialGradient(0, 0, b.r * 0.5, 0, 0, b.r * (2.1 + ph * 0.3));
-    rg.addColorStop(0, hexA(b.color, 0.28 + ph * 0.1));
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-b.r * 2.8, -b.r * 2.8, b.r * 5.6, b.r * 5.6);
+    drawGlow(c, b.color, 0, 0, b.r * (2.1 + ph * 0.3), 0.28 + ph * 0.1);
   }
   /* the final boss carries a rotating halo of light rays */
   if (b.def.final && !P.settings.perf) {
@@ -3096,13 +3135,7 @@ function drawCore(c, core, t) {
   const pl = 1 + 0.12 * Math.sin(t * 3);
   c.save();
   c.translate(core.x, core.y);
-  if (!P.settings.perf) {
-    const rg = c.createRadialGradient(0, 0, 0, 0, 0, core.r * 3 * pl);
-    rg.addColorStop(0, "rgba(255,240,160,.6)");
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-core.r * 3, -core.r * 3, core.r * 6, core.r * 6);
-  }
+  if (!P.settings.perf) drawGlow(c, "#fff0a0", 0, 0, core.r * 3 * pl, 0.6);
   c.fillStyle = "#fff7d8";
   c.beginPath(); c.arc(0, 0, core.r * 0.85 * pl, 0, TAU); c.fill();
   c.strokeStyle = "#ffd04a"; c.lineWidth = core.r * 0.08;
@@ -3125,11 +3158,7 @@ function drawPlayer(c, t) {
   /* Blood Rage / Afterburn Aura */
   if ((p.rageT > 0 || p.dashT > 0) && !P.settings.perf) {
     const pulse = 1 + 0.15 * Math.sin(t * 12);
-    const rg = c.createRadialGradient(0, 0, p.r * 0.4, 0, 0, p.r * 2.2 * pulse);
-    rg.addColorStop(0, p.dashT > 0 ? "rgba(138,232,255,0.4)" : "rgba(255,58,94,0.45)");
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-p.r * 2.4, -p.r * 2.4, p.r * 4.8, p.r * 4.8);
+    drawGlow(c, p.dashT > 0 ? "#8ae8ff" : "#ff3a5e", 0, 0, p.r * 2.2 * pulse, p.dashT > 0 ? 0.4 : 0.45);
   }
 
   /* Magnet attraction range circle */
@@ -3145,11 +3174,7 @@ function drawPlayer(c, t) {
 
   /* cosmic aura at late evolutions */
   if (G.evoIndex >= 13 && !P.settings.perf) {
-    const rg = c.createRadialGradient(0, 0, p.r * 0.6, 0, 0, p.r * 2.4);
-    rg.addColorStop(0, hexA(col, 0.06 + evo.aura * 0.22));
-    rg.addColorStop(1, "rgba(0,0,0,0)");
-    c.fillStyle = rg;
-    c.fillRect(-p.r * 2.4, -p.r * 2.4, p.r * 4.8, p.r * 4.8);
+    drawGlow(c, col, 0, 0, p.r * 2.4, 0.06 + evo.aura * 0.22);
     c.save(); c.rotate(t * 0.5);
     c.strokeStyle = hexA(col, 0.4);
     c.lineWidth = p.r * 0.05;
