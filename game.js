@@ -9,6 +9,7 @@
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
+const angleLerp = (a, b, t) => { let d = ((b - a) % TAU + TAU + Math.PI) % TAU - Math.PI; return a + d * t; };
 const rand = (a, b) => a + Math.random() * (b - a);
 const randi = (a, b) => Math.floor(rand(a, b + 1));
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
@@ -903,6 +904,7 @@ const GlowCache = (() => {
       g.fillStyle = rg;
       g.beginPath(); g.arc(32, 32, 32, 0, TAU); g.fill();
       cache.set(color, s);
+      if (cache.size > 128) { cache.delete(cache.keys().next().value); }
     }
     return s;
   };
@@ -1115,7 +1117,7 @@ function startRun() {
     eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
     manualDashCd: 0
   };
-  G.objs = []; G.shots = []; G.boss = null; G.bossPending = false; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
+  G.objs = []; G.shots = []; G.boss = null; G.bossPending = false; G.bossGeneration = (G.bossGeneration || 0) + 1; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
   G.xp = 0;
   G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
@@ -1127,6 +1129,7 @@ function startRun() {
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
   }
   G.run = { maxEvoRun: G.evoIndex, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false, diet: { blob: 0, rect: 0, poly: 0, glow: 0 } };
+  runUpgradeCounts = {};
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
@@ -1170,7 +1173,7 @@ function spawnObject(initial) {
   if (isEnemy) {
     const idx = randi(0, 1);
     def = ENEMIES[tier][idx];
-    name = def[0]; ai = def[1]; color = def[2]; shape = "blob";
+    name = def[0]; ai = def[1]; color = def[2] || "#ff6a6a"; shape = "blob";
   } else {
     const idx = randi(0, 4);
     def = CONSUMABLES[tier][idx];
@@ -1272,7 +1275,9 @@ function tutUpdate(dt) {
     return;
   }
   let ok = false;
-  try { ok = TUT_STEPS[T.step].test(); } catch (e) {}
+  const currentStep = TUT_STEPS[T.step];
+  if (!currentStep) { tutFinish(); return; }
+  try { ok = currentStep.test(); } catch (e) {}
   if (ok) {
     T.doneT = 0.9;
     $("tutChip").classList.add("done");
@@ -1344,7 +1349,7 @@ function bossDamage(amount) {
   const b = G.boss; if (!b) return;
   b.hp -= amount; b.hitFlash = 1;
   SFX.bossHit();
-  if (G.stats.bossHeal) G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.bossHeal * 0.1);
+  if (G.stats.bossHeal) G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.bossHeal);
   if (b.hp <= 0) killBoss();
 }
 function killBoss() {
@@ -1408,7 +1413,9 @@ function upgradePoolExhausted() {
 function addXp(v) {
   G.xp += v * G.stats.xpMult * Math.min(comboMult(), 2.5);
   let leveled = false;
-  while (G.xp >= G.xpNeed) {
+  let levelUps = 0;
+  while (G.xp >= G.xpNeed && G.xpNeed > 0 && levelUps < 50) {
+    levelUps++;
     G.xp -= G.xpNeed;
     G.level++;
     G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
@@ -1472,12 +1479,16 @@ function consume(o, chained) {
   if (s.dashEvery && p.eatCount - p.dashCount >= s.dashEvery) { p.dashCount = p.eatCount; p.dashT = 0.55; FX.ring(p.x, p.y, p.r * 3, "#8ae8ff", 3); }
   // chain bite
   if (!chained && s.chainBite > 0) {
-    let chained2 = 0;
-    for (let i = G.objs.length - 1; i >= 0 && chained2 < s.chainBite; i--) {
+    const targets = [];
+    for (let i = G.objs.length - 1; i >= 0 && targets.length < s.chainBite; i--) {
       const q = G.objs[i];
       if (q !== o && q.r < p.r && dist2(q.x, q.y, o.x, o.y) < (p.r * 2.4) ** 2) {
-        G.objs.splice(i, 1); consume(q, true); chained2++;
+        targets.push(q);
       }
+    }
+    for (const q of targets) {
+      const idx = G.objs.indexOf(q);
+      if (idx !== -1) { G.objs.splice(idx, 1); consume(q, true); }
     }
   }
   checkAch();
@@ -1553,7 +1564,7 @@ function rollChoices() {
   while (picks.length < n && pool.length && guard++ < 400) {
     const weights = pool.map(u => {
       let w = RARITY_W[u.rarity];
-      if (u.rarity !== "common") w *= s.legendOdds;
+      if (u.rarity === "legend") w *= s.legendOdds;
       return w;
     });
     let total = weights.reduce((a, b) => a + b, 0), r = Math.random() * total, idx = 0;
@@ -1597,9 +1608,10 @@ function checkBossSpawn() {
     if (G.rushBossIndex < BOSSES.length) {
       G.bossPending = true;
       const runToken = G.run;
+      const gen = G.bossGeneration;
       const fire = () => {
-        if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
-        if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; }
+        if (G.run !== runToken || G.bossGeneration !== gen || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
+        if (G.state !== "play" || G.boss) { if (G.bossGeneration === gen) setTimeout(fire, 700); return; }
         G.bossPending = false;
         if (G.rushBossIndex < BOSSES.length) spawnBoss(BOSSES[G.rushBossIndex]);
       };
@@ -1611,11 +1623,12 @@ function checkBossSpawn() {
   if (eligible.length) {
     G.bossPending = true;
     const runToken = G.run;
+    const gen = G.bossGeneration;
     // give a longer breather between ladder bosses on endless re-cycles
     const delay = (G.mode === "endless" && G.endlessCycle > 0) ? 9000 : 2600;
     const fire = () => {
-      if (G.run !== runToken || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
-      if (G.state !== "play" || G.boss) { setTimeout(fire, 700); return; }
+      if (G.run !== runToken || G.bossGeneration !== gen || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
+      if (G.state !== "play" || G.boss) { if (G.bossGeneration === gen) setTimeout(fire, 700); return; }
       G.bossPending = false;
       const reEligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
       if (reEligible.length) spawnBoss(reEligible[0]); // climb the ladder in order
@@ -1786,13 +1799,12 @@ function toast(html, type, label) {
   t.className = "toast t-" + (type || "success");
   t.innerHTML = (label ? '<div class="tl">' + label + '</div>' : "") + '<div class="tx">' + html + '</div>';
   wrap.appendChild(t);
-  while (wrap.children.length > 3) wrap.removeChild(wrap.firstChild);
+  while (wrap.children.length > 5) wrap.removeChild(wrap.firstChild);
   setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 3800);
 }
 
 /* ---------------- ambient background ---------------- */
 function buildAmbient() {
-  runUpgradeCounts = {};
   G.ambient = [];
   for (let i = 0; i < 110; i++) {
     G.ambient.push({ u: Math.random(), v: Math.random(), s: rand(0.6, 2.4), f: i < 70 ? 0.22 : 0.5, tw: rand(1, 4), ph: rand(0, TAU) });
@@ -1959,7 +1971,7 @@ function update(dt) {
     p.vx = lerp(p.vx, ax, k); p.vy = lerp(p.vy, ay, k);
   } else { p.vx *= Math.pow(0.002, dt); p.vy *= Math.pow(0.002, dt); }
   p.x += p.vx * dt; p.y += p.vy * dt;
-  p.faceA = lerp(p.faceA, Math.atan2(p.vy, p.vx), Math.abs(p.vx) + Math.abs(p.vy) > p.r * 0.2 ? 1 - Math.pow(0.001, dt) : 0);
+  p.faceA = angleLerp(p.faceA, Math.atan2(p.vy, p.vx), Math.abs(p.vx) + Math.abs(p.vy) > p.r * 0.2 ? 1 - Math.pow(0.001, dt) : 0);
 
   /* ---- timers / regen / smooth growth ---- */
   p.iframe = Math.max(0, p.iframe - dt);
@@ -1988,11 +2000,17 @@ function update(dt) {
 
   /* ---- afterburner wake ---- */
   if (s.afterburn && Math.hypot(p.vx, p.vy) > p.r * 1.2) {
+    const burnTargets = [];
+    const bx = p.x - Math.cos(p.faceA) * p.r, by = p.y - Math.sin(p.faceA) * p.r;
     for (let i = G.objs.length - 1; i >= 0; i--) {
       const o = G.objs[i];
-      if (o.r < p.r * 0.35 && dist2(o.x, o.y, p.x - Math.cos(p.faceA) * p.r, p.y - Math.sin(p.faceA) * p.r) < (p.r * 1.1) ** 2) {
-        G.objs.splice(i, 1); consume(o, true);
+      if (o.r < p.r * 0.35 && dist2(o.x, o.y, bx, by) < (p.r * 1.1) ** 2) {
+        burnTargets.push(o);
       }
+    }
+    for (const o of burnTargets) {
+      const idx = G.objs.indexOf(o);
+      if (idx !== -1) { G.objs.splice(idx, 1); consume(o, true); }
     }
   }
 
@@ -2047,8 +2065,9 @@ function update(dt) {
           }
         } else if (o.shape !== "shard" && o.r < p.r * (1 + s.biteSize)) {
           if (dist2(sh.x, sh.y, o.x, o.y) < (o.r + sh.r) ** 2) {
-            consume(o);
-            G.objs.splice(j, 1);
+            const spliceIdx = G.objs.indexOf(o);
+            if (spliceIdx !== -1) G.objs.splice(spliceIdx, 1);
+            consume(o, true);
             FX.burst(sh.x, sh.y, "#00f5a0", 8, sh.r, sh.r, 0.5);
             hit = true;
             break;
@@ -2073,7 +2092,7 @@ function update(dt) {
     /* despawn far away */
     if (d > vr * 2.7) { G.objs.splice(i, 1); continue; }
     /* shard lifetime */
-    if (o.shape === "shard") { o.life -= wdt; o.a += o.spin * wdt; if (o.life <= 0) { G.objs.splice(i, 1); continue; } }
+    if (o.shape === "shard") { o.life -= dt; o.a += o.spin * wdt; if (o.life <= 0) { G.objs.splice(i, 1); continue; } }
     o.stun = Math.max(0, o.stun - wdt);
     const edible = o.r <= eatBound;
     /* magnet pull */
@@ -2238,7 +2257,7 @@ function updateBoss(wdt, dt) {
         const tier = clamp(G.evoIndex - randi(0, 1), 0, 19);
         const def = ENEMIES[tier][randi(0, 1)];
         G.objs.push({ x: b.x + rand(-b.r, b.r), y: b.y + rand(-b.r, b.r), vx: 0, vy: 0,
-          r: EVOR[tier] * rand(0.5, 0.8), name: def[0], color: def[2] || "#fff", shape: "blob", tier,
+          r: EVOR[tier] * rand(0.5, 0.8), name: def[0], color: def[2] || "#ff6a6a", shape: "blob", tier,
           ai: def[1], a: 0, spin: 0, wob: Math.random() * 9, hp: 1, fireT: rand(1, 2), dartT: rand(0.5, 1.5), wx: 0, wy: 0, stun: 0 });
       }
       if (!P.settings.reduced) FX.ring(b.x, b.y, b.r * 1.8, b.color, 3);
@@ -2320,6 +2339,7 @@ function updateBoss(wdt, dt) {
    RENDER
 ============================================================ */
 function hexA(hex, a) {
+  if (!hex || hex[0] !== "#") return "rgba(128,128,128," + a + ")";
   const v = parseInt(hex.slice(1), 16);
   return "rgba(" + ((v >> 16) & 255) + "," + ((v >> 8) & 255) + "," + (v & 255) + "," + a + ")";
 }
@@ -2349,7 +2369,7 @@ function render() {
   } else { g.addColorStop(0, "#0e0e1c"); g.addColorStop(1, "#191229"); }
   c.fillStyle = g;
   c.fillRect(0, 0, W, H);
-  if (!playing) { renderMenuBg(c, t); return; }
+  if (!playing) { renderMenuBg(c, t, frameDt); return; }
 
   const z = camZoom();
   let shx = 0, shy = 0;
@@ -2397,6 +2417,7 @@ function render() {
     c.restore();
   }
 
+  c.setLineDash([]);
   /* objects */
   for (const o of G.objs) {
     if (Math.abs(o.x - p.x) > vr * (W / Math.min(W, H)) + o.r || Math.abs(o.y - p.y) > vr + o.r) continue;
@@ -2596,7 +2617,7 @@ function render() {
   }
 }
 
-function renderMenuBg(c, t) {
+function renderMenuBg(c, t, mdt) {
   /* drifting motes behind the menu */
   if (!G.menuMotes) {
     G.menuMotes = [];
@@ -2609,10 +2630,11 @@ function renderMenuBg(c, t) {
     const dx = INPUT.x - mp.x, dy = INPUT.y - mp.y;
     const d = Math.hypot(dx, dy);
     if (d > 4) {
-      mp.x += dx * 0.08;
-      mp.y += dy * 0.08;
+      const k = 1 - Math.pow(0.005, mdt);
+      mp.x += dx * k;
+      mp.y += dy * k;
     }
-    mp.mouth = Math.max(0, mp.mouth - 0.05);
+    mp.mouth = Math.max(0, mp.mouth - mdt * 3.2);
   }
 
   for (const m of G.menuMotes) {
@@ -2852,7 +2874,10 @@ function bindUI() {
   $("goMenuBtn").onclick = () => { SFX.ui(); hide("gameOverScreen"); G.state = "menu"; updateMenuChrome(); show("menuScreen"); };
   $("vRetryBtn").onclick = () => { SFX.ui(); hide("victoryScreen"); startRun(); };
   $("vMenuBtn").onclick = () => { SFX.ui(); hide("victoryScreen"); G.state = "menu"; updateMenuChrome(); show("menuScreen"); };
-  document.addEventListener("visibilitychange", () => { if (document.hidden && G.state === "play") togglePause(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && G.state === "play") togglePause();
+    if (!document.hidden) lastT = performance.now() / 1000;
+  });
   const dealBuy = $("shopDealBuyBtn");
   if (dealBuy) {
     dealBuy.onclick = () => {
@@ -2884,6 +2909,7 @@ function bindUI() {
    MAIN LOOP + BOOT
 ============================================================ */
 let lastT = 0;
+let frameDt = 0.016;
 function frame(ts) {
   requestAnimationFrame(frame);
   const now = ts / 1000;
@@ -2891,6 +2917,7 @@ function frame(ts) {
   let dt = Math.min(rawDt, 0.05);
   if (!(dt > 0)) dt = 0.016;
   lastT = now;
+  frameDt = dt;
   if (G.state === "play") Quality.sample(rawDt);
   if (FX.hitstop > 0) { FX.hitstop -= dt; dt *= 0.1; }
   if (G.slowmoT > 0 && G.state === "play") { G.slowmoT -= dt; dt *= 0.35; }
@@ -2934,6 +2961,7 @@ function blobPath(c, r, t, wob, points, amp) {
   c.closePath();
 }
 function shade(hex, f) { // f>1 lighten, f<1 darken
+  if (!hex || hex[0] !== "#") return hex || "#888888";
   const v = parseInt(hex.slice(1), 16);
   const r = clamp(Math.round(((v >> 16) & 255) * f), 0, 255);
   const g = clamp(Math.round(((v >> 8) & 255) * f), 0, 255);
