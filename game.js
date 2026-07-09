@@ -1142,6 +1142,7 @@ function startRun() {
   else { G.tut = null; hide("tutChip"); }
   checkBossSpawn();
   refreshHud(true);
+  lastT = performance.now() / 1000;
 }
 
 /* ---------------- spawning ---------------- */
@@ -1150,7 +1151,8 @@ function viewRadius() {
   return Math.hypot(W, H) / (2 * z);
 }
 function camZoom() {
-  return clamp((Math.min(W, H) * 0.10) / G.player.r, 0.00012, 8) / G.stats.zoomOut;
+  if (!G.player) return 1;
+  return clamp((Math.min(W, H) * 0.10) / G.player.r, 0.00012, 8) / (G.stats ? G.stats.zoomOut : 1);
 }
 function tierName(tier, idx) {
   const sk = G.world.skin;
@@ -2082,17 +2084,18 @@ function update(dt) {
   const magR = p.r * 2.6 * s.magnet;
   const eatBound = p.r * (1 + s.biteSize);
   const vr = viewRadius();
+  const toRemove = [];
+  const toConsume = [];
   for (let i = G.objs.length - 1; i >= 0; i--) {
-    if (i >= G.objs.length) continue; // chain-bite may have shrunk the array
     const o = G.objs[i];
     if (!o) continue;
     const dx = p.x - o.x, dy = p.y - o.y;
     const d2 = dx * dx + dy * dy;
     const d = Math.sqrt(d2);
     /* despawn far away */
-    if (d > vr * 2.7) { G.objs.splice(i, 1); continue; }
+    if (d > vr * 2.7) { toRemove.push(o); continue; }
     /* shard lifetime */
-    if (o.shape === "shard") { o.life -= dt; o.a += o.spin * wdt; if (o.life <= 0) { G.objs.splice(i, 1); continue; } }
+    if (o.shape === "shard") { o.life -= dt; o.a += o.spin * wdt; if (o.life <= 0) { toRemove.push(o); continue; } }
     o.stun = Math.max(0, o.stun - wdt);
     const edible = o.r <= eatBound;
     /* magnet pull */
@@ -2104,7 +2107,7 @@ function update(dt) {
     /* eat / collide */
     const reach = p.r * 0.92 * s.reach;
     if (edible) {
-      if (d < reach + o.r * 0.25) { G.objs.splice(i, 1); consume(o); continue; }
+      if (d < reach + o.r * 0.25) { toConsume.push(o); continue; }
     } else if (d < p.r * 0.8 + o.r * 0.72) {
       const ratio = o.r / p.r;
       let dmg = clamp(6 + ratio * 6, 6, 26);
@@ -2140,8 +2143,8 @@ function update(dt) {
         // keep distance and fire
         const want = vr * 0.42;
         const dir = d < want ? -1 : 0.4;
-        o.vx = lerp(o.vx, -dx / Math.max(d, 1) * sp * dir * -1, 0.04);
-        o.vy = lerp(o.vy, -dy / Math.max(d, 1) * sp * dir * -1, 0.04);
+        o.vx = lerp(o.vx, -dx / Math.max(d, 1) * sp * dir * -1, 1 - Math.pow(0.08, wdt));
+        o.vy = lerp(o.vy, -dy / Math.max(d, 1) * sp * dir * -1, 1 - Math.pow(0.08, wdt));
         o.fireT -= wdt;
         if (o.fireT <= 0 && d < vr * 1.0 && G.shots.length < 40 && G.time > 10) {
           o.fireT = rand(2.2, 3.4);
@@ -2155,6 +2158,14 @@ function update(dt) {
     }
     o.x += o.vx * wdt; o.y += o.vy * wdt;
     o.a += o.spin * wdt * 0.4;
+  }
+  for (const o of toRemove) {
+    const idx = G.objs.indexOf(o);
+    if (idx !== -1) G.objs.splice(idx, 1);
+  }
+  for (const o of toConsume) {
+    const idx = G.objs.indexOf(o);
+    if (idx !== -1) { G.objs.splice(idx, 1); consume(o); }
   }
 
   /* ---- enemy shots ---- */
@@ -2919,8 +2930,10 @@ function frame(ts) {
   lastT = now;
   frameDt = dt;
   if (G.state === "play") Quality.sample(rawDt);
-  if (FX.hitstop > 0) { FX.hitstop -= dt; dt *= 0.1; }
-  if (G.slowmoT > 0 && G.state === "play") { G.slowmoT -= dt; dt *= 0.35; }
+  let activeDt = dt;
+  if (FX.hitstop > 0) { FX.hitstop -= dt; activeDt *= 0.1; }
+  if (G.slowmoT > 0 && G.state === "play") { G.slowmoT -= dt; activeDt *= 0.35; }
+  dt = activeDt;
   if (G.state === "play") update(dt);
   FX.update(dt);
   render();
