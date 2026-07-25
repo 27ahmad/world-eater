@@ -48,7 +48,7 @@ const Save = (() => {
       owned: { skin_void: true, trail_none: true }, equippedSkin: "skin_void", equippedTrail: "trail_none",
       perks: {}, ach: {}, worlds: { city: true }, world: "city",
       dealId: null, dealExpires: 0, tutorialDone: false,
-      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false }
+      settings: { master: 80, music: 55, sfx: 85, shake: true, reduced: false, perf: false, cb: false, ui: 100, muted: false, autoPick: false }
     };
   }
   function load() {
@@ -233,7 +233,12 @@ const UPGRADES = [
   U("vampiric","🧛","Vampiric Maw","Boss bites heal 3 HP","rare",s=>s.bossHeal+=3,3),
   U("cosmicluck","🎰","Cosmic Luck","Auto-mutation weighs an extra option","legend",s=>s.choices+=1,1),
   U("afterburn","☄️","Afterburner","Leave a damaging wake that pops small prey","epic",s=>s.afterburn=true,1),
-  U("zenith","🌠","Zenith","+15% to speed, XP, growth and score","legend",s=>{s.speed*=1.15;s.xpMult*=1.15;s.growMult*=1.15;s.scoreMult*=1.15;},1)
+  U("zenith","🌠","Zenith","+15% to speed, XP, growth and score","legend",s=>{s.speed*=1.15;s.xpMult*=1.15;s.growMult*=1.15;s.scoreMult*=1.15;},1),
+  // --- behavior-defining archetypes (change HOW you play, not just numbers) ---
+  U("orbiters","🌙","Warden Moons","Summon an orbiting moon that devours prey and batters foes","epic",s=>s.orbiters=(s.orbiters||0)+1,3),
+  U("spit","🧪","Acid Glands","Auto-spit acid at the nearest threat — fight at range","epic",s=>s.spit=(s.spit||0)+1,3),
+  U("aura","🌿","Bramble Aura","A stinging field stuns and shoves off anything close","rare",s=>s.aura=(s.aura||0)+1,3),
+  U("phasefang","🗡️","Phase Fang","Dash devours prey you pass through; kills refresh the dash","legend",s=>s.phaseFang=true,1)
 ];
 const RARITY_W = { common: 100, rare: 42, epic: 14, legend: 4 };
 
@@ -247,7 +252,8 @@ const UPGRADE_DIETS = {
   farsight: "rect", patience: "rect", cosmicluck: "rect",
   vacuum: "glow", magnetcore: "glow", singularity: "glow", blackhole: "glow", undertow: "glow",
   doublebite: "glow", comboglue: "glow", comboheat: "glow", burst: "glow", echo: "glow",
-  timeeater: "glow", ironjaw: "glow", zenith: "glow"
+  timeeater: "glow", ironjaw: "glow", zenith: "glow", orbiters: "glow",
+  spit: "poly", aura: "blob", phasefang: "poly"
 };
 
 /* ---------------- worlds: 5 ---------------- */
@@ -1071,7 +1077,8 @@ function newRunStats() {
     bossDmg: 1, evoSpeed: 0, thorns: 0, dashEvery: 0, iframes: 1.0, shardChance: 0, shardValue: 1,
     evoHeal: false, enemyShards: 1, hitstopMult: 1, zoomOut: 1, rageOnHit: false, feastGrow: false,
     undertow: false, xpNeedMult: 1, chainBite: 0, cheatDeath: 0, timeSlow: 1, choices: 3,
-    afterburn: false, bossHeal: 0, heal: 0, instaGrow: 0, legendOdds: 1, essenceMult: 1
+    afterburn: false, bossHeal: 0, heal: 0, instaGrow: 0, legendOdds: 1, essenceMult: 1,
+    orbiters: 0, spit: 0, aura: 0, phaseFang: false
   };
   const pk = id => P.owned[id];
   if (pk("perk_legs")) s.speed *= 1.08;
@@ -1115,25 +1122,27 @@ function startRun() {
     x: 0, y: 0, vx: 0, vy: 0, r: startR, targetR: startR,
     mouth: 0, blink: 0, iframe: 0, hurtT: 0, rageT: 0, dashT: 0,
     eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
-    manualDashCd: 0
+    manualDashCd: 0, orbA: 0, spitCd: 0
   };
-  G.objs = []; G.shots = []; G.boss = null; G.bossPending = false; G.bossGeneration = (G.bossGeneration || 0) + 1; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
+  G.objs = []; G.shots = []; G.boss = null; G.bossPending = false; G.victoryCore = null; G.fusions = { spikeStorm: false, gravitySlipstream: false, ironClad: false, reaverRage: false }; G.playerShots = []; G.gravityTrails = [];
   G.xp = 0;
-  G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
+  G.xpNeed = xpForLevel(G.level);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
   G.eaten = 0; G.time = 0; G.slowmoT = 0; G.upCount = 0;
+  G.pendingChoices = 0; G.currentChoices = null;
+  G.bossTimer = 0;
   G.event = null; G.eventT = rand(22, 38);
   if (P.owned["perk_start2"] && G.mode !== "rush") {
     startMutations = 1;
     G.level = 2;
-    G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
+    G.xpNeed = xpForLevel(G.level);
   }
   G.run = { maxEvoRun: G.evoIndex, bestCombo: 0, score: 0, time: 0, bossKilled: {}, world: G.world.id, runOver: false, victory: false, damageTaken: 0, legendPicked: false, diet: { blob: 0, rect: 0, poly: 0, glow: 0 } };
   runUpgradeCounts = {};
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
-  show("hud"); hideAll(["menuScreen","pauseScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen"]);
+  show("hud"); hideAll(["menuScreen","pauseScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen","levelupScreen"]);
   $("hint").style.display = "";
   setTimeout(() => { $("hint").style.display = "none"; }, 6000);
   G.state = "play";
@@ -1149,6 +1158,13 @@ function startRun() {
 function viewRadius() {
   const z = camZoom();
   return Math.hypot(W, H) / (2 * z);
+}
+// Threat ramp: rises with survival time and evolution, capped so late game stays fair.
+// Standard/endless push hardest; rush starts already tense; zen never ramps.
+function difficulty() {
+  if (G.mode === "zen") return 1;
+  const cyc = (G.endlessCycle || 0) * 0.35;
+  return clamp(1 + G.time / 90 + G.evoIndex * 0.02 + cyc, 1, 2.4);
 }
 function camZoom() {
   if (!G.player) return 1;
@@ -1170,7 +1186,8 @@ function spawnObject(initial) {
     tier = Math.min(tier, G.evoIndex);
   }
   tier = clamp(tier, 0, 19);
-  const isEnemy = G.mode === "zen" ? false : Math.random() < (0.13 + stage * 0.004) && G.time > 6;
+  const enemyChance = clamp((0.13 + stage * 0.005) * difficulty(), 0, 0.42);
+  const isEnemy = G.mode === "zen" ? false : Math.random() < enemyChance && G.time > 3;
   let def, name, color, shape, ai = null;
   if (isEnemy) {
     const idx = randi(0, 1);
@@ -1198,6 +1215,16 @@ function spawnObject(initial) {
     a: Math.random() * TAU, spin: rand(-0.4, 0.4), wob: Math.random() * 9,
     hp: isEnemy ? r * 0.4 : 0, fireT: rand(1, 3), dartT: rand(0.6, 2), wx: rand(-1, 1), wy: rand(-1, 1), stun: 0
   };
+  // Elites: mechanical difficulty. As the threat ramp climbs, some hunters spawn
+  // enraged — bigger, faster, harder-hitting, ringed in red — but worth far more.
+  // You have to read and dodge them, not just tank through. (Skill, not stat bloat.)
+  if (isEnemy && G.mode !== "zen" && (ai === "chase" || ai === "dart") && G.time > 25) {
+    if (Math.random() < clamp((difficulty() - 1) * 0.22, 0, 0.3)) {
+      o.elite = true;
+      o.r *= 1.4;
+      o.baseColor = o.color;
+    }
+  }
   if (initial && dist2(o.x, o.y, p.x, p.y) < (p.r * 4) ** 2 && o.r > p.r) { o.x += viewRadius(); }
   G.objs.push(o);
 }
@@ -1354,6 +1381,13 @@ function bossDamage(amount) {
   if (G.stats.bossHeal) G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.bossHeal);
   if (b.hp <= 0) killBoss();
 }
+// Silent, continuous chip damage for DoT-style sources (orbiters, aura) so they
+// don't spam the boss-hit SFX every frame.
+function chipBoss(amount) {
+  const b = G.boss; if (!b) return;
+  b.hp -= amount; b.hitFlash = Math.max(b.hitFlash, 0.4);
+  if (b.hp <= 0) killBoss();
+}
 function killBoss() {
   const b = G.boss; if (!b) return;
   SFX.bossDie();
@@ -1412,28 +1446,36 @@ function addScore(v, x, y) {
 function upgradePoolExhausted() {
   return UPGRADES.every(u => (runUpgradeCounts[u.id] || 0) >= u.max);
 }
+function xpForLevel(l) { return Math.floor(26 * Math.pow(l, 1.5) * (G.stats ? G.stats.xpNeedMult : 1)); }
 function addXp(v) {
-  G.xp += v * G.stats.xpMult * Math.min(comboMult(), 2.5);
+  // Combo boosts XP but is capped low, so hot streaks pay out in score/growth
+  // rather than rocketing you through level-ups (which would spam the choice screen).
+  G.xp += v * G.stats.xpMult * Math.min(comboMult(), 1.8);
   let leveled = false;
   let levelUps = 0;
   while (G.xp >= G.xpNeed && G.xpNeed > 0 && levelUps < 50) {
     levelUps++;
     G.xp -= G.xpNeed;
     G.level++;
-    G.xpNeed = Math.floor(16 * Math.pow(G.level, 1.45) * G.stats.xpNeedMult);
+    G.xpNeed = xpForLevel(G.level);
     leveled = true;
     if (upgradePoolExhausted()) {
       // every mutation is maxed — convert further levels into a heal + score surge
       G.stats.hp = Math.min(G.stats.maxHp, G.stats.hp + G.stats.maxHp * 0.25);
       addScore(G.level * 25, G.player.x, G.player.y - G.player.r * 1.3);
+    } else if (P.settings.autoPick) {
+      autoMutateOne(); // accessibility / casual: the Hunger decides
     } else {
-      autoMutateOne(); // mutations are picked automatically from your diet
+      G.pendingChoices = (G.pendingChoices || 0) + 1; // player picks on the choice screen
     }
   }
   if (leveled) {
     SFX.levelup();
     FX.ring(G.player.x, G.player.y, G.player.r * 4, "#7cff6b", 4);
+    if (G.pendingChoices > 0) toast("Mutation ready — pick it at the next lull", "success", "Level " + G.level);
   }
+  // NB: we do NOT open the choice screen here. It's deferred to a combo lull
+  // (see update()) so it never interrupts an active feeding streak.
 }
 function growBy(amount) {
   let mult = G.stats.growMult;
@@ -1450,6 +1492,15 @@ function consume(o, chained) {
   G.combo++; G.comboT = s.comboTime;
   if (G.combo > G.bestCombo) { G.bestCombo = G.combo; G.run.bestCombo = G.combo; }
   if (G.combo % 5 === 0) { SFX.combo(G.combo); FX.text(p.x, p.y - p.r * 1.4, "x" + G.combo + " COMBO!", G.combo >= 25 ? "#ff9a3d" : "#7cff6b", 1.1 + Math.min(G.combo, 50) * 0.012); }
+  // combo milestones: sustaining aggression is a SURVIVAL strategy — big streaks
+  // heal you and surge, which pairs with combo-decay-on-hit to make hunting pay.
+  if (G.combo === 25 || G.combo === 50 || G.combo === 100 || (G.combo > 100 && G.combo % 50 === 0)) {
+    if (G.mode !== "zen") s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.12);
+    FX.addShake(8); FX.flash = Math.max(FX.flash, 0.28);
+    FX.ring(p.x, p.y, p.r * 4.5, "#ff9a3d", 5); SFX.shock();
+    const label = G.combo >= 100 ? "UNSTOPPABLE" : G.combo >= 50 ? "RAMPAGE" : "FRENZY";
+    toast("<b>" + label + " ×" + G.combo + "</b>" + (G.mode !== "zen" ? "<br>+12% HP surge" : ""), "gold", "Combo");
+  }
   // value
   let val = eatValue(o);
   if (o.shardVal) val = o.shardVal * s.shardValue;
@@ -1475,6 +1526,14 @@ function consume(o, chained) {
   // shard scatter
   if (Math.random() < s.shardChance && ratio > 0.4) spawnShard(o.x, o.y, val * 0.4);
   if (o.ai && Math.random() < 0.3 * s.enemyShards) spawnShard(o.x, o.y, val * 0.5);
+  // elite bounty: taking one down (or catching it) pays out big
+  if (o.elite) {
+    for (let i = 0; i < 4; i++) spawnShard(o.x + rand(-o.r, o.r), o.y + rand(-o.r, o.r), val * 0.6);
+    addScore(val * 4, o.x, o.y - o.r * 1.4);
+    FX.text(o.x, o.y - o.r * 1.5, "ELITE SLAIN!", "#ff4d5e", 1.35);
+    if (!P.settings.reduced) { FX.ring(o.x, o.y, o.r * 3, "#ff4d5e", 5); FX.addShake(6); }
+    SFX.bigEat();
+  }
   // shockwave gut
   if (s.shockEvery && p.eatCount - p.shockCount >= s.shockEvery) { p.shockCount = p.eatCount; shockwave(); }
   // slipstream dash
@@ -1542,7 +1601,13 @@ function hurt(amount, srcName, srcX, srcY) {
     const d = Math.max(1, Math.hypot(p.x - srcX, p.y - srcY));
     p.vx += (p.x - srcX) / d * p.r * 0.4; p.vy += (p.y - srcY) / d * p.r * 0.4;
   }
-  G.combo = 0; G.comboT = 0;
+  // Getting hit DENTS your combo instead of wiping it — aggression stays rewarded.
+  // You keep half your streak and a partial window to rebuild it.
+  if (G.combo > 0) {
+    G.combo = Math.floor(G.combo * 0.5);
+    G.comboT = G.combo > 0 ? Math.max(G.comboT, s.comboTime * 0.6) : 0;
+    if (G.combo > 0) FX.text(p.x, p.y - p.r * 1.5, "COMBO -50%", "#ff9a3d", 0.85);
+  }
   if (s.hp <= 0) {
     if (s.cheatDeath > 0) {
       s.cheatDeath--; s.hp = s.maxHp * 0.5;
@@ -1556,7 +1621,11 @@ function hurt(amount, srcName, srcX, srcY) {
 }
 
 /* ---------------- level-up / upgrades ---------------- */
+// The behavior-defining archetypes — every run should get the chance to build
+// around at least one, so build-crafting is the point, not a rare accident.
+const ARCHETYPE_IDS = ["orbiters", "spit", "aura", "phasefang", "afterburn"];
 let runUpgradeCounts = {};
+function hasArchetype() { return ARCHETYPE_IDS.some(id => runUpgradeCounts[id]); }
 function rollChoices() {
   const s = G.stats;
   const pool = UPGRADES.filter(u => (runUpgradeCounts[u.id] || 0) < u.max);
@@ -1567,12 +1636,20 @@ function rollChoices() {
     const weights = pool.map(u => {
       let w = RARITY_W[u.rarity];
       if (u.rarity === "legend") w *= s.legendOdds;
+      // Pity system: once you're a few levels in with no archetype yet, heavily
+      // weight the archetypes so a signature build is offered, not left to luck.
+      if (ARCHETYPE_IDS.includes(u.id) && !hasArchetype() && G.level >= 3) w *= 14;
       return w;
     });
     let total = weights.reduce((a, b) => a + b, 0), r = Math.random() * total, idx = 0;
     for (let i = 0; i < pool.length; i++) { r -= weights[i]; if (r <= 0) { idx = i; break; } }
     const u = pool.splice(idx, 1)[0];
     picks.push(u);
+  }
+  // Hard guarantee: if still no archetype offered and none owned, force one in.
+  if (!hasArchetype() && G.level >= 4 && !picks.some(u => ARCHETYPE_IDS.includes(u.id))) {
+    const avail = UPGRADES.filter(u => ARCHETYPE_IDS.includes(u.id) && (runUpgradeCounts[u.id] || 0) < u.max);
+    if (avail.length) picks[picks.length - 1] = pick(avail);
   }
   return picks;
 }
@@ -1605,38 +1682,32 @@ function triggerFusionUnlock(title, desc) {
 }
 
 function checkBossSpawn() {
+  // Queue a boss on a timer that ticks inside the update loop, so it can never
+  // fire across a pause / level-up / game-over transition (the old setTimeout
+  // approach needed run-token + generation guards to avoid double spawns).
   if (G.boss || G.bossPending || G.state !== "play" || G.mode === "zen") return;
   if (G.mode === "rush") {
-    if (G.rushBossIndex < BOSSES.length) {
-      G.bossPending = true;
-      const runToken = G.run;
-      const gen = G.bossGeneration;
-      const fire = () => {
-        if (G.run !== runToken || G.bossGeneration !== gen || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
-        if (G.state !== "play" || G.boss) { if (G.bossGeneration === gen) setTimeout(fire, 700); return; }
-        G.bossPending = false;
-        if (G.rushBossIndex < BOSSES.length) spawnBoss(BOSSES[G.rushBossIndex]);
-      };
-      setTimeout(fire, 2600);
-    }
+    if (G.rushBossIndex < BOSSES.length) { G.bossPending = true; G.bossTimer = 2.6; }
     return;
   }
   const eligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
   if (eligible.length) {
     G.bossPending = true;
-    const runToken = G.run;
-    const gen = G.bossGeneration;
     // give a longer breather between ladder bosses on endless re-cycles
-    const delay = (G.mode === "endless" && G.endlessCycle > 0) ? 9000 : 2600;
-    const fire = () => {
-      if (G.run !== runToken || G.bossGeneration !== gen || G.state === "over" || G.state === "victory" || G.state === "menu") { G.bossPending = false; return; }
-      if (G.state !== "play" || G.boss) { if (G.bossGeneration === gen) setTimeout(fire, 700); return; }
-      G.bossPending = false;
-      const reEligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
-      if (reEligible.length) spawnBoss(reEligible[0]); // climb the ladder in order
-    };
-    setTimeout(fire, delay);
+    G.bossTimer = (G.mode === "endless" && G.endlessCycle > 0) ? 9 : 2.6;
   }
+}
+function updateBossSpawn(dt) {
+  if (!G.bossPending || G.boss) return; // hold the countdown while a boss is alive
+  G.bossTimer -= dt;
+  if (G.bossTimer > 0) return;
+  G.bossPending = false;
+  if (G.mode === "rush") {
+    if (G.rushBossIndex < BOSSES.length) spawnBoss(BOSSES[G.rushBossIndex]);
+    return;
+  }
+  const reEligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
+  if (reEligible.length) spawnBoss(reEligible[0]); // climb the ladder in order
 }
 
 function autoMutateOne() {
@@ -1674,6 +1745,49 @@ function pickUpgradeQuiet(u) {
     toast("<b>" + u.name + "</b><br>" + u.desc, "success", "Mutation");
   }
   checkAch();
+}
+
+/* ---------------- level-up mutation choice ---------------- */
+const RARITY_CLASS = { rare: "t-rare", epic: "t-epic", legend: "t-legendary" };
+const RARITY_NAME = { common: "Common", rare: "Rare", epic: "Epic", legend: "Legendary" };
+function openLevelUpChoice() {
+  const choices = rollChoices();
+  if (!choices || !choices.length) { G.pendingChoices = 0; if (G.state === "levelup") { hide("levelupScreen"); G.state = "play"; } return; }
+  G.currentChoices = choices;
+  G.state = "levelup";
+  $("luLevel").textContent = G.level;
+  $("luQueue").textContent = G.pendingChoices > 1 ? (G.pendingChoices - 1) + " more after this" : "";
+  const box = $("luCards");
+  box.innerHTML = "";
+  choices.forEach((u, i) => {
+    const b = document.createElement("button");
+    b.className = "lu-card " + (RARITY_CLASS[u.rarity] || "");
+    b.innerHTML =
+      '<span class="lu-key">' + (i + 1) + '</span>' +
+      '<div class="lu-ic">' + u.icon + '</div>' +
+      '<div class="lu-name">' + u.name + '</div>' +
+      '<div class="lu-desc">' + u.desc + '</div>' +
+      '<div class="lu-rarity">' + (RARITY_NAME[u.rarity] || "Common") + '</div>';
+    b.onclick = () => chooseUpgrade(i);
+    box.appendChild(b);
+  });
+  show("levelupScreen");
+  SFX.ui();
+}
+function chooseUpgrade(i) {
+  if (G.state !== "levelup" || !G.currentChoices) return;
+  const u = G.currentChoices[i];
+  if (!u) return;
+  pickUpgradeQuiet(u);
+  G.currentChoices = null;
+  G.pendingChoices = Math.max(0, (G.pendingChoices || 0) - 1);
+  if (G.pendingChoices > 0) {
+    openLevelUpChoice(); // present the next queued level-up
+  } else {
+    hide("levelupScreen");
+    G.state = "play";
+    lastT = performance.now() / 1000; // avoid a dt spike on resume
+  }
 }
 
 /* ---------------- evolution ---------------- */
@@ -1731,6 +1845,16 @@ function finishRunCommon() {
   $("bossWrap").style.display = "none";
   return { ess, newBest };
 }
+// A short, human summary of the mutations that defined the run, weighted by
+// rarity × stacks, so each death/victory screen shows the build you actually played.
+function buildSummary() {
+  const counts = runUpgradeCounts || {};
+  const w = { legend: 4, epic: 3, rare: 2, common: 1 };
+  const taken = UPGRADES.filter(u => counts[u.id]).map(u => ({ u, n: counts[u.id], score: w[u.rarity] * counts[u.id] }));
+  if (!taken.length) return "Unspecialized — pure hunger";
+  taken.sort((a, b) => b.score - a.score);
+  return taken.slice(0, 3).map(t => t.u.icon + " " + t.u.name + (t.n > 1 ? " ×" + t.n : "")).join("&nbsp;&nbsp; ");
+}
 function gameOver(cause) {
   if (G.state === "over") return;
   G.state = "over";
@@ -1745,6 +1869,7 @@ function gameOver(cause) {
   $("goTime").textContent = fmtTime(G.time);
   $("goEssence").textContent = "+" + fmtInt(ess);
   $("deathCause").textContent = "Destroyed by " + cause;
+  const gb = $("goBuild"); if (gb) gb.innerHTML = buildSummary();
   $("goNewBest").classList.toggle("hidden", !newBest);
   setTimeout(() => { show("gameOverScreen"); hide("hud"); }, 700);
 }
@@ -1761,6 +1886,7 @@ function victory() {
   $("vCombo").textContent = "x" + G.bestCombo;
   $("vTime").textContent = fmtTime(G.time);
   $("vEssence").textContent = "+" + fmtInt(ess);
+  const vb = $("vBuild"); if (vb) vb.innerHTML = buildSummary();
   setTimeout(() => { show("victoryScreen"); hide("hud"); }, 1100);
 }
 
@@ -1870,6 +1996,16 @@ window.addEventListener("keydown", e => {
     return;
   }
   
+  // Level-up mutation choice: pick with number keys
+  if (G.state === "levelup") {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= (G.currentChoices ? G.currentChoices.length : 0)) {
+      e.preventDefault();
+      chooseUpgrade(n - 1);
+    }
+    return;
+  }
+
   // Game Over Screen Shortcuts
   if (G.state === "over") {
     if (e.key === " " || e.key === "Enter") {
@@ -1953,6 +2089,7 @@ function update(dt) {
   const p = G.player, s = G.stats;
   const wdt = dt * s.timeSlow;           // world runs slower with Time Eater
   G.time += dt;
+  const diff = difficulty();             // threat ramp (see difficulty())
 
   /* ---- player movement ---- */
   const z = camZoom();
@@ -1989,6 +2126,10 @@ function update(dt) {
 
   /* ---- combo decay ---- */
   if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) { G.combo = 0; } }
+
+  /* ---- mutation choice waits for a lull (combo ended) so it never interrupts a
+         feeding streak; if several stack up, cash them in anyway ---- */
+  if (!P.settings.autoPick && G.pendingChoices > 0 && (G.combo === 0 || G.pendingChoices >= 3)) openLevelUpChoice();
 
   /* ---- trail ---- */
   const trail = P.equippedTrail;
@@ -2080,6 +2221,78 @@ function update(dt) {
     }
   }
 
+  /* ---- Warden Moons: orbiting bodies that devour prey and batter foes ---- */
+  if (s.orbiters > 0) {
+    p.orbA += dt * 2.4;
+    const oR = p.r * 2.1, hitR = p.r * 0.42;
+    for (let k = 0; k < s.orbiters; k++) {
+      const a = p.orbA + k * TAU / s.orbiters;
+      const ox = p.x + Math.cos(a) * oR, oy = p.y + Math.sin(a) * oR;
+      if (G.boss && dist2(ox, oy, G.boss.x, G.boss.y) < (G.boss.r + hitR) ** 2) {
+        chipBoss((4 + p.r * 0.04) * s.bossDmg * dt * 6);
+      }
+      for (let i = G.objs.length - 1; i >= 0; i--) {
+        const o = G.objs[i];
+        if (!o || o.shape === "shard") continue;
+        if (dist2(ox, oy, o.x, o.y) < (o.r + hitR) ** 2) {
+          if (o.r < p.r * (1 + s.biteSize)) { G.objs.splice(i, 1); consume(o, true); }
+          else if (o.ai) { o.stun = Math.max(o.stun || 0, 1.2); const dd = Math.max(1, Math.hypot(o.x - p.x, o.y - p.y)); o.vx += (o.x - p.x) / dd * p.r * 0.6; o.vy += (o.y - p.y) / dd * p.r * 0.6; }
+        }
+      }
+    }
+  }
+
+  /* ---- Bramble Aura: a DEFENSIVE control field — stuns & shoves foes away, chips
+         bosses. Deliberately does NOT eat prey, so it stays distinct from the
+         offensive Warden Moons and rewards a get-close, tank playstyle. ---- */
+  if (s.aura > 0) {
+    const aR = p.r * (1.5 + s.aura * 0.35);
+    for (let i = G.objs.length - 1; i >= 0; i--) {
+      const o = G.objs[i];
+      if (!o || o.shape === "shard" || !o.ai) continue;
+      const dd2 = dist2(p.x, p.y, o.x, o.y);
+      if (dd2 < (aR + o.r) ** 2) {
+        o.stun = Math.max(o.stun || 0, 0.35);
+        const dd = Math.max(1, Math.sqrt(dd2));
+        o.vx += (o.x - p.x) / dd * p.r * 0.9 * dt; o.vy += (o.y - p.y) / dd * p.r * 0.9 * dt;
+      }
+    }
+    if (G.boss && dist2(p.x, p.y, G.boss.x, G.boss.y) < (aR + G.boss.r) ** 2) chipBoss((1.5 + p.r * 0.02) * s.aura * s.bossDmg * dt);
+  }
+
+  /* ---- Phase Fang: dashing devours prey you pass through (and lets you punch
+         slightly above your weight); a kill refreshes the dash so you can chain
+         across the field. A skill-based mobility/assassin archetype. ---- */
+  if (s.phaseFang && p.dashT > 0) {
+    for (let i = G.objs.length - 1; i >= 0; i--) {
+      const o = G.objs[i];
+      if (!o || o.shape === "shard") continue;
+      if (dist2(p.x, p.y, o.x, o.y) < (p.r * 1.05 + o.r * 0.6) ** 2) {
+        if (o.r < p.r * (1 + s.biteSize + 0.25)) { G.objs.splice(i, 1); consume(o, true); p.manualDashCd = 0; }
+        else if (o.ai) { o.stun = Math.max(o.stun || 0, 1.5); }
+      }
+    }
+  }
+
+  /* ---- Acid Glands: auto-fire at the nearest threat (reuses player-shot handling) ---- */
+  if (s.spit > 0) {
+    p.spitCd -= dt;
+    if (p.spitCd <= 0) {
+      let best = null, bestD = Infinity;
+      if (G.boss) { best = G.boss; bestD = dist2(p.x, p.y, G.boss.x, G.boss.y); }
+      for (const o of G.objs) { if (o && o.ai) { const dd = dist2(p.x, p.y, o.x, o.y); if (dd < bestD) { bestD = dd; best = o; } } }
+      const range = viewRadius() * 1.1;
+      if (best && bestD < range * range) {
+        p.spitCd = 1.5 / s.spit;
+        const dd = Math.max(1, Math.sqrt(bestD));
+        const sv = p.r * 3.4;
+        if (!G.playerShots) G.playerShots = [];
+        G.playerShots.push({ x: p.x, y: p.y, vx: (best.x - p.x) / dd * sv, vy: (best.y - p.y) / dd * sv, r: p.r * 0.15, life: 1.7, c: "#c8ff3a" });
+        SFX.shard();
+      } else { p.spitCd = 0.4; }
+    }
+  }
+
   /* ---- objects ---- */
   const magR = p.r * 2.6 * s.magnet;
   const eatBound = p.r * (1 + s.biteSize);
@@ -2110,7 +2323,8 @@ function update(dt) {
       if (d < reach + o.r * 0.25) { toConsume.push(o); continue; }
     } else if (d < p.r * 0.8 + o.r * 0.72) {
       const ratio = o.r / p.r;
-      let dmg = clamp(6 + ratio * 6, 6, 26);
+      let dmg = clamp(6 + ratio * 6, 6, 26) * (0.85 + (diff - 1) * 0.55);
+      if (o.elite) dmg *= 1.5;
       if (ratio > 1.6) dmg *= s.bigArmor;
       if (G.fusions && G.fusions.ironClad && ratio > 1.0) dmg *= 0.6;
       hurt(dmg, o.name, o.x, o.y);
@@ -2128,12 +2342,13 @@ function update(dt) {
           o.vx = o.wx / m * sp * 0.5; o.vy = o.wy / m * sp * 0.5;
         }
       } else if (o.ai === "chase" && bigger) {
-        o.vx = lerp(o.vx, dx / Math.max(d, 1) * sp * 1.25, 1 - Math.pow(0.05, wdt));
-        o.vy = lerp(o.vy, dy / Math.max(d, 1) * sp * 1.25, 1 - Math.pow(0.05, wdt));
+        const chaseSp = sp * (1.05 + diff * 0.22) * (o.elite ? 1.3 : 1);
+        o.vx = lerp(o.vx, dx / Math.max(d, 1) * chaseSp, 1 - Math.pow(0.05, wdt));
+        o.vy = lerp(o.vy, dy / Math.max(d, 1) * chaseSp, 1 - Math.pow(0.05, wdt));
       } else if (o.ai === "dart") {
         o.dartT -= wdt;
         if (o.dartT <= 0 && d < vr * 0.8) {
-          o.dartT = rand(1.4, 2.6);
+          o.dartT = rand(1.4, 2.6) / (diff * (o.elite ? 1.4 : 1));
           const dir = bigger ? 1 : -1;
           o.vx = dx / Math.max(d, 1) * sp * 3.2 * dir; o.vy = dy / Math.max(d, 1) * sp * 3.2 * dir;
           if (bigger && !P.settings.reduced) FX.ring(o.x, o.y, o.r * 1.6, o.color, 2);
@@ -2147,7 +2362,7 @@ function update(dt) {
         o.vy = lerp(o.vy, -dy / Math.max(d, 1) * sp * dir * -1, 1 - Math.pow(0.08, wdt));
         o.fireT -= wdt;
         if (o.fireT <= 0 && d < vr * 1.0 && G.shots.length < 40 && G.time > 10) {
-          o.fireT = rand(2.2, 3.4);
+          o.fireT = rand(2.2, 3.4) / (0.7 + diff * 0.3);
           const sv = p.r * 2.6;
           G.shots.push({ x: o.x, y: o.y, vx: dx / Math.max(d, 1) * sv, vy: dy / Math.max(d, 1) * sv, r: p.r * 0.13, life: 3.2, c: o.color });
           SFX.shard();
@@ -2191,7 +2406,8 @@ function update(dt) {
     if (p.r >= c.r * 0.9 && d < p.r + c.r * 0.65) { G.victoryCore = null; victory(); return; }
   }
 
-  /* ---- world events / first-run guide ---- */
+  /* ---- boss spawn timer / world events / first-run guide ---- */
+  updateBossSpawn(dt);
   updateWorldEvents(dt);
   tutUpdate(dt);
 
@@ -2368,7 +2584,7 @@ function mod(n, m) { return ((n % m) + m) % m; }
 
 function render() {
   const c = ctx2d, p = G.player;
-  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "over" || G.state === "victory");
+  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "over" || G.state === "victory" || G.state === "levelup");
   const t = performance.now() / 1000;
   const band = bandFor(playing ? G.evoIndex : 0);
   /* background gradient: world tint at small scale -> cosmic at large */
@@ -2433,6 +2649,11 @@ function render() {
   for (const o of G.objs) {
     if (Math.abs(o.x - p.x) > vr * (W / Math.min(W, H)) + o.r || Math.abs(o.y - p.y) > vr + o.r) continue;
     drawObject(c, o, t, z);
+    if (o.elite) { // pulsing danger ring — read it, dodge it
+      const pulse = 0.5 + 0.5 * Math.sin(t * 6 + o.wob);
+      c.beginPath(); c.arc(o.x, o.y, o.r * (1.16 + pulse * 0.12), 0, TAU);
+      c.strokeStyle = hexA("#ff4d5e", 0.45 + pulse * 0.4); c.lineWidth = Math.max(1.2, o.r * 0.09); c.stroke();
+    }
   }
   /* shots */
   for (const sh of G.shots) {
@@ -2463,8 +2684,28 @@ function render() {
   if (G.victoryCore) drawCore(c, G.victoryCore, t);
   /* boss */
   if (G.boss) drawBoss(c, G.boss, t);
+  /* bramble aura (behind the player) */
+  if (G.stats && G.stats.aura > 0) {
+    const aR = p.r * (1.5 + G.stats.aura * 0.35);
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3);
+    c.beginPath(); c.arc(p.x, p.y, aR, 0, TAU);
+    c.fillStyle = hexA("#7cff6b", 0.05 + pulse * 0.04); c.fill();
+    c.beginPath(); c.arc(p.x, p.y, aR, 0, TAU);
+    c.strokeStyle = hexA("#7cff6b", 0.22 + pulse * 0.18); c.lineWidth = Math.max(1, p.r * 0.06); c.stroke();
+  }
   /* player */
   drawPlayer(c, t);
+  /* warden moons (in front of the player) */
+  if (G.stats && G.stats.orbiters > 0) {
+    const oR = p.r * 2.1, hitR = p.r * 0.42;
+    for (let k = 0; k < G.stats.orbiters; k++) {
+      const a = (p.orbA || 0) + k * TAU / G.stats.orbiters;
+      const ox = p.x + Math.cos(a) * oR, oy = p.y + Math.sin(a) * oR;
+      if (!P.settings.reduced) drawGlow(c, "#8ae8ff", ox, oy, hitR * 2.4, 0.5);
+      c.beginPath(); c.arc(ox, oy, hitR, 0, TAU); c.fillStyle = "#8ae8ff"; c.fill();
+      c.beginPath(); c.arc(ox, oy, hitR * 0.44, 0, TAU); c.fillStyle = "#ffffff"; c.fill();
+    }
+  }
   /* particles */
   for (const pt of FX.parts) {
     c.globalAlpha = clamp(pt.life, 0, 1);
@@ -2821,6 +3062,7 @@ function applySettingsToUI() {
   $("sReduced").classList.toggle("on", P.settings.reduced);
   $("sPerf").classList.toggle("on", P.settings.perf);
   $("sCb").classList.toggle("on", P.settings.cb);
+  $("sAuto").classList.toggle("on", !!P.settings.autoPick);
   document.documentElement.style.setProperty("--ui-scale", P.settings.ui / 100);
 }
 function bindSettings() {
@@ -2831,6 +3073,7 @@ function bindSettings() {
   tog("sReduced", "reduced");
   tog("sPerf", "perf", resize);
   tog("sCb", "cb");
+  tog("sAuto", "autoPick");
   let armed = false;
   $("sReset").addEventListener("click", () => {
     if (!armed) { armed = true; $("sReset").textContent = "Sure?"; setTimeout(() => { armed = false; $("sReset").textContent = "Reset"; }, 2500); return; }
