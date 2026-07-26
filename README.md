@@ -9,8 +9,9 @@ Play the game here: https://27ahmad.github.io/world-eater/
 - Your first run is guided by the **First Hunt** objectives; after that you're on your own.
 - Drag or move mouse (or WASD / arrow keys) to move the player mote.
 - Devour objects smaller than you to grow.
-- On level-up, pick one of three mutations (click a card or press 1–3). Prefer to let the game decide? Turn on **Auto-pick mutations** in Settings.
-- Threats grow faster and hit harder the longer you survive — don't get comfortable.
+- On level-up, three mutation orbs appear around you — **swim into the one you want**. The game never pauses to ask. Prefer it automatic? Turn on **Auto-pick mutations** in Settings.
+- Threats grow faster and hit harder the longer you survive, and some hunters spawn as **elites** (ringed in red) — bigger, faster, and worth far more.
+- Getting hit halves your combo instead of wiping it; streaks of 25/50/100 heal you.
 - Press Space, Shift, F, or E (or double-tap on touch) to dash.
 - Press M to toggle mute/unmute audio.
 - Press Escape or P to pause.

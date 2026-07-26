@@ -1120,7 +1120,9 @@ function startRun() {
   const startR = EVOR[G.evoIndex] * (P.owned["perk_head"] ? 1.15 : 1);
   G.player = {
     x: 0, y: 0, vx: 0, vy: 0, r: startR, targetR: startR,
-    mouth: 0, blink: 0, iframe: 0, hurtT: 0, rageT: 0, dashT: 0,
+    // Brief spawn grace — without it an unlucky adjacent spawn could end a run
+    // in under 10 seconds before the player had done anything.
+    mouth: 0, blink: 0, iframe: 2.5, hurtT: 0, rageT: 0, dashT: 0,
     eatCount: 0, shockCount: 0, dashCount: 0, faceA: 0, wob: Math.random() * 9,
     manualDashCd: 0, orbA: 0, spitCd: 0
   };
@@ -1129,8 +1131,8 @@ function startRun() {
   G.xpNeed = xpForLevel(G.level);
   G.score = 0; G.combo = 0; G.comboT = 0; G.bestCombo = 0;
   G.eaten = 0; G.time = 0; G.slowmoT = 0; G.upCount = 0;
-  G.pendingChoices = 0; G.currentChoices = null;
-  G.bossTimer = 0;
+  G.pendingChoices = 0; G.mutaOrbs = [];
+  G.bossTimer = 0; G.runAch = [];
   G.event = null; G.eventT = rand(22, 38);
   if (P.owned["perk_start2"] && G.mode !== "rush") {
     startMutations = 1;
@@ -1142,7 +1144,7 @@ function startRun() {
   FX.clear();
   for (let i = 0; i < 26; i++) spawnObject(true);
   buildAmbient();
-  show("hud"); hideAll(["menuScreen","pauseScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen","levelupScreen"]);
+  show("hud"); hideAll(["menuScreen","pauseScreen","gameOverScreen","victoryScreen","worldsScreen","shopScreen","achScreen","settingsScreen"]);
   $("hint").style.display = "";
   setTimeout(() => { $("hint").style.display = "none"; }, 6000);
   G.state = "play";
@@ -1218,10 +1220,11 @@ function spawnObject(initial) {
   // Elites: mechanical difficulty. As the threat ramp climbs, some hunters spawn
   // enraged — bigger, faster, harder-hitting, ringed in red — but worth far more.
   // You have to read and dodge them, not just tank through. (Skill, not stat bloat.)
-  if (isEnemy && G.mode !== "zen" && (ai === "chase" || ai === "dart") && G.time > 25) {
-    if (Math.random() < clamp((difficulty() - 1) * 0.22, 0, 0.3)) {
+  if (isEnemy && G.mode !== "zen" && (ai === "chase" || ai === "dart") && G.time > 15) {
+    if (Math.random() < clamp((difficulty() - 1) * 0.13, 0, 0.20)) {
       o.elite = true;
       o.r *= 1.4;
+      o.name = "an Elite " + o.name;   // deaths should name the thing that hunted you
       o.baseColor = o.color;
     }
   }
@@ -1354,7 +1357,11 @@ function spawnBoss(bdef) {
   const hp = bdef.hp * scale;
   const name = bdef.name + (cycle > 0 ? " +" + cycle : "");
   
-  const r = p.r * 1.9;
+  // Bosses spawn only modestly larger than the player. At 1.9x the bite gate
+  // (p.r >= b.r * 0.8) meant you had to grow 52% before you could damage a boss
+  // at all — in Rush that made the first boss unkillable and it killed ~2/3 of
+  // runs inside 20s. At 1.4x a boss is imposing but immediately fightable.
+  const r = p.r * 1.4;
   G.boss = {
     def: bdef, name: name, color: bdef.color,
     x: p.x + Math.cos(ang) * viewRadius() * 1.2, y: p.y + Math.sin(ang) * viewRadius() * 1.2,
@@ -1437,7 +1444,9 @@ function killBoss() {
 }
 
 /* ---------------- scoring / xp / growth ---------------- */
-function comboMult() { return 1 + G.combo * (0.04 + G.stats.comboBonus * 0.1); }
+// Capped: an uncapped multiplier turned 2000-combo runs into 59M scores, which
+// makes the score meaningless and unrankable. 12x is still a huge payoff.
+function comboMult() { return Math.min(1 + G.combo * (0.04 + G.stats.comboBonus * 0.1), 12); }
 function addScore(v, x, y) {
   const gain = Math.floor(v * G.stats.scoreMult * comboMult());
   G.score += gain;
@@ -1446,11 +1455,12 @@ function addScore(v, x, y) {
 function upgradePoolExhausted() {
   return UPGRADES.every(u => (runUpgradeCounts[u.id] || 0) >= u.max);
 }
-function xpForLevel(l) { return Math.floor(26 * Math.pow(l, 1.5) * (G.stats ? G.stats.xpNeedMult : 1)); }
+// Fast, front-loaded curve: the first minute should be a rush of growth and
+// zoom-outs. Mutations arrive as orbs now, so frequent levels are a reward,
+// not an interruption — there's no reason to throttle them.
+function xpForLevel(l) { return Math.floor(15 * Math.pow(l, 1.38) * (G.stats ? G.stats.xpNeedMult : 1)); }
 function addXp(v) {
-  // Combo boosts XP but is capped low, so hot streaks pay out in score/growth
-  // rather than rocketing you through level-ups (which would spam the choice screen).
-  G.xp += v * G.stats.xpMult * Math.min(comboMult(), 1.8);
+  G.xp += v * G.stats.xpMult * Math.min(comboMult(), 2.5);
   let leveled = false;
   let levelUps = 0;
   while (G.xp >= G.xpNeed && G.xpNeed > 0 && levelUps < 50) {
@@ -1466,16 +1476,16 @@ function addXp(v) {
     } else if (P.settings.autoPick) {
       autoMutateOne(); // accessibility / casual: the Hunger decides
     } else {
-      G.pendingChoices = (G.pendingChoices || 0) + 1; // player picks on the choice screen
+      // Queue an orb offer. Capped so a burst of levels can't leave a permanent
+      // escort of orbs trailing you for the rest of the run.
+      G.pendingChoices = Math.min((G.pendingChoices || 0) + 1, 3);
     }
   }
   if (leveled) {
     SFX.levelup();
     FX.ring(G.player.x, G.player.y, G.player.r * 4, "#7cff6b", 4);
-    if (G.pendingChoices > 0) toast("Mutation ready — pick it at the next lull", "success", "Level " + G.level);
   }
-  // NB: we do NOT open the choice screen here. It's deferred to a combo lull
-  // (see update()) so it never interrupts an active feeding streak.
+  // Mutations are offered as in-world orbs (see spawnMutationOrbs), never a modal.
 }
 function growBy(amount) {
   let mult = G.stats.growMult;
@@ -1491,15 +1501,21 @@ function consume(o, chained) {
   // combo
   G.combo++; G.comboT = s.comboTime;
   if (G.combo > G.bestCombo) { G.bestCombo = G.combo; G.run.bestCombo = G.combo; }
-  if (G.combo % 5 === 0) { SFX.combo(G.combo); FX.text(p.x, p.y - p.r * 1.4, "x" + G.combo + " COMBO!", G.combo >= 25 ? "#ff9a3d" : "#7cff6b", 1.1 + Math.min(G.combo, 50) * 0.012); }
+  // Milestones are also multiples of 5, so suppress the routine combo shout on
+  // those beats — otherwise both strings render on the same spot.
+  const milestone = G.combo === 25 || G.combo === 50 || G.combo === 100 || (G.combo > 100 && G.combo % 50 === 0);
+  // Every 10, not every 5, and smaller: the HUD combo box already shows the
+  // running count, so a big shout twice a second was pure noise on top of it.
+  if (G.combo % 10 === 0 && !milestone) { SFX.combo(G.combo); FX.text(p.x, p.y - p.r * 1.4, "x" + G.combo, G.combo >= 25 ? "#ff9a3d" : "#7cff6b", 0.95); }
+  else if (G.combo % 5 === 0 && !milestone) SFX.combo(G.combo);
   // combo milestones: sustaining aggression is a SURVIVAL strategy — big streaks
   // heal you and surge, which pairs with combo-decay-on-hit to make hunting pay.
-  if (G.combo === 25 || G.combo === 50 || G.combo === 100 || (G.combo > 100 && G.combo % 50 === 0)) {
+  if (milestone) {
     if (G.mode !== "zen") s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.12);
-    FX.addShake(8); FX.flash = Math.max(FX.flash, 0.28);
+    FX.addShake(8);
     FX.ring(p.x, p.y, p.r * 4.5, "#ff9a3d", 5); SFX.shock();
     const label = G.combo >= 100 ? "UNSTOPPABLE" : G.combo >= 50 ? "RAMPAGE" : "FRENZY";
-    toast("<b>" + label + " ×" + G.combo + "</b>" + (G.mode !== "zen" ? "<br>+12% HP surge" : ""), "gold", "Combo");
+    FX.text(p.x, p.y - p.r * 1.9, label + " ×" + G.combo, "#ff9a3d", 1.5);
   }
   // value
   let val = eatValue(o);
@@ -1509,7 +1525,9 @@ function consume(o, chained) {
   if (doubled) val *= 2;
   addXp(val);
   addScore(val * 2.2, o.x, o.y);
-  growBy(o.r * o.r / Math.max(p.targetR, 1) * 0.16 / (1 + G.evoIndex * 0.5));
+  // Flatter than the original *0.5 so the upper evolutions don't grind, but not
+  // so flat that late growth runs away (0.26 let bots reach the final form in ~90s).
+  growBy(o.r * o.r / Math.max(p.targetR, 1) * 0.19 / (1 + G.evoIndex * 0.4));
   if (s.eatHeal) s.hp = Math.min(s.maxHp, s.hp + s.eatHeal);
   G.eaten++; P.totalEaten++;
   if (o.shape && o.shape !== "shard" && G.run && G.run.diet) G.run.diet[o.shape] = (G.run.diet[o.shape] || 0) + 1;
@@ -1638,7 +1656,10 @@ function rollChoices() {
       if (u.rarity === "legend") w *= s.legendOdds;
       // Pity system: once you're a few levels in with no archetype yet, heavily
       // weight the archetypes so a signature build is offered, not left to luck.
-      if (ARCHETYPE_IDS.includes(u.id) && !hasArchetype() && G.level >= 3) w *= 14;
+      // Use a FLAT weight rather than a multiplier — multiplying preserved the
+      // rare-vs-legend gap (42 vs 4), so the one "rare" archetype was offered
+      // ~10x more than the others and every run ended up the same build.
+      if (ARCHETYPE_IDS.includes(u.id) && !hasArchetype() && G.level >= 3) return 160;
       return w;
     });
     let total = weights.reduce((a, b) => a + b, 0), r = Math.random() * total, idx = 0;
@@ -1687,7 +1708,9 @@ function checkBossSpawn() {
   // approach needed run-token + generation guards to avoid double spawns).
   if (G.boss || G.bossPending || G.state !== "play" || G.mode === "zen") return;
   if (G.mode === "rush") {
-    if (G.rushBossIndex < BOSSES.length) { G.bossPending = true; G.bossTimer = 2.6; }
+    // Give Rush a real opening breather — arriving at evo 10 surrounded by
+    // bigger scenery AND a boss 2.6s in was ending most runs before 20s.
+    if (G.rushBossIndex < BOSSES.length) { G.bossPending = true; G.bossTimer = G.rushBossIndex === 0 ? 7 : 3.2; }
     return;
   }
   const eligible = BOSSES.filter(b => b.evo <= G.evoIndex && !G.run.bossKilled[BOSSES.indexOf(b)]);
@@ -1740,54 +1763,156 @@ function pickUpgradeQuiet(u) {
   P.totalUpgrades++; G.upCount++;
   saveP();
   SFX.pick();
-  FX.text(G.player.x, G.player.y - G.player.r * 1.3, "+ " + u.name, "#7cff6b", 1.25);
-  if (u.rarity === "legend" || u.rarity === "epic") {
-    toast("<b>" + u.name + "</b><br>" + u.desc, "success", "Mutation");
-  }
+  // In-world text only — you just ate the orb, you know what you picked.
+  FX.text(G.player.x, G.player.y - G.player.r * 1.3, u.icon + " " + u.name, "#7cff6b", 1.3);
+  if (u.desc) FX.text(G.player.x, G.player.y - G.player.r * 2.1, u.desc, "#9fb4c7", 0.8);
   checkAch();
 }
 
-/* ---------------- level-up mutation choice ---------------- */
-const RARITY_CLASS = { rare: "t-rare", epic: "t-epic", legend: "t-legendary" };
-const RARITY_NAME = { common: "Common", rare: "Rare", epic: "Epic", legend: "Legendary" };
-function openLevelUpChoice() {
-  const choices = rollChoices();
-  if (!choices || !choices.length) { G.pendingChoices = 0; if (G.state === "levelup") { hide("levelupScreen"); G.state = "play"; } return; }
-  G.currentChoices = choices;
-  G.state = "levelup";
-  $("luLevel").textContent = G.level;
-  $("luQueue").textContent = G.pendingChoices > 1 ? (G.pendingChoices - 1) + " more after this" : "";
-  const box = $("luCards");
-  box.innerHTML = "";
-  choices.forEach((u, i) => {
-    const b = document.createElement("button");
-    b.className = "lu-card " + (RARITY_CLASS[u.rarity] || "");
-    b.innerHTML =
-      '<span class="lu-key">' + (i + 1) + '</span>' +
-      '<div class="lu-ic">' + u.icon + '</div>' +
-      '<div class="lu-name">' + u.name + '</div>' +
-      '<div class="lu-desc">' + u.desc + '</div>' +
-      '<div class="lu-rarity">' + (RARITY_NAME[u.rarity] || "Common") + '</div>';
-    b.onclick = () => chooseUpgrade(i);
-    box.appendChild(b);
-  });
-  show("levelupScreen");
-  SFX.ui();
+/* ---------------- mutation orbs (in-world upgrade choice) ----------------
+   This is a FLOW game: it must never stop. Instead of a modal, a level-up
+   scatters its candidate mutations into the world as edible orbs. You choose
+   by swimming into the one you want — the choice is expressed with the game's
+   own core verb, so agency costs zero interruption. */
+const RARITY_COLOR = { common: "#9fb4c7", rare: "#5db9ff", epic: "#d946ef", legend: "#ff9a3d" };
+// Orbs are sized and placed in SCREEN space, not world space. Because camZoom
+// keeps the player at a fixed fraction of the viewport, world-relative sizing
+// made orbs (and their labels) shrink to ~7px on a phone and spawn past the
+// screen edge. These floors keep them legible and reachable on any device.
+function orbMetrics() {
+  const z = camZoom(), m = Math.min(W, H);
+  return {
+    z,
+    r:     clamp(m * 0.062, 26, 44) / z,   // orb radius
+    dist:  clamp(m * 0.24,  84, 230) / z,  // spawn distance from player
+    // Group leash, tied to spawn distance so the whole fan stays roughly where
+    // it appeared — i.e. always on screen and always reachable.
+    leash: clamp(m * 0.24,  84, 230) * 1.15 / z,
+    label: clamp(m * 0.034, 12, 16) / z    // name text — min 12px CSS
+  };
 }
-function chooseUpgrade(i) {
-  if (G.state !== "levelup" || !G.currentChoices) return;
-  const u = G.currentChoices[i];
-  if (!u) return;
-  pickUpgradeQuiet(u);
-  G.currentChoices = null;
-  G.pendingChoices = Math.max(0, (G.pendingChoices || 0) - 1);
-  if (G.pendingChoices > 0) {
-    openLevelUpChoice(); // present the next queued level-up
-  } else {
-    hide("levelupScreen");
-    G.state = "play";
-    lastT = performance.now() / 1000; // avoid a dt spike on resume
+// Lowest screen-Y an orb may occupy without hiding under the HUD strip.
+function orbTopLimit(M) { return 96 + M.r * M.z * 2.2 + M.label * M.z * 1.4; }
+// Vertical-only guard. Deliberately NOT a full box-clamp: clamping each orb
+// independently collapsed the whole fan into a stack whenever it pointed at a
+// corner. Horizontal fit is already guaranteed by orbMetrics().dist.
+function guardOrbBelowHud(o, p, M) {
+  const sy = H / 2 + (o.y - p.y) * M.z;
+  const top = Math.min(orbTopLimit(M), H * 0.5);
+  if (sy < top) o.y = p.y + (top - H / 2) / M.z;
+}
+function spawnMutationOrbs() {
+  if (G.mutaOrbs && G.mutaOrbs.length) return;   // one set on offer at a time
+  const choices = rollChoices();
+  if (!choices || !choices.length) { G.pendingChoices = 0; return; }
+  const p = G.player;
+  const M = orbMetrics();
+  // Spread them far enough apart that even the longest name labels clear.
+  const spread = 2 * Math.asin(clamp((M.r * 4.2) / (2 * M.dist), 0.12, 0.58));
+  const half = (choices.length - 1) / 2;
+  // Rotate the WHOLE fan until every orb clears the HUD, rather than clamping
+  // orbs individually (which squashed them into a pile). Falls back to straight
+  // down, which always clears.
+  const minSin = clamp((orbTopLimit(M) - H / 2) / (M.dist * M.z), -1, 1);
+  let base = Math.PI / 2;
+  for (let tries = 0; tries < 16; tries++) {
+    const cand = Math.random() * TAU;
+    let ok = true;
+    for (let i = 0; i < choices.length; i++) {
+      if (Math.sin(cand + (i - half) * spread) < minSin) { ok = false; break; }
+    }
+    if (ok) { base = cand; break; }
   }
+  G.mutaOrbs = choices.map((u, i) => {
+    const a = base + (i - half) * spread;
+    return { u, x: p.x + Math.cos(a) * M.dist, y: p.y + Math.sin(a) * M.dist, r: M.r, wob: Math.random() * 9, t: 0 };
+  });
+  SFX.pick();
+}
+function updateMutationOrbs(dt) {
+  if (!G.mutaOrbs || !G.mutaOrbs.length) return;
+  const p = G.player;
+  const M = orbMetrics();
+  // Leash the SET as a rigid group, translating every orb by the same delta.
+  // Clamping each orb's own radius independently made them all converge onto
+  // the direction trailing the player and stack into a single unpickable pile.
+  let cx = 0, cy = 0;
+  for (const o of G.mutaOrbs) { cx += o.x; cy += o.y; }
+  cx /= G.mutaOrbs.length; cy /= G.mutaOrbs.length;
+  const gdx = p.x - cx, gdy = p.y - cy, gd = Math.hypot(gdx, gdy) || 1;
+  if (gd > M.leash) {
+    const k = gd - M.leash, ox = gdx / gd * k, oy = gdy / gd * k;
+    for (const o of G.mutaOrbs) { o.x += ox; o.y += oy; }
+  }
+  for (let i = G.mutaOrbs.length - 1; i >= 0; i--) {
+    const o = G.mutaOrbs[i];
+    o.t += dt;
+    o.r = M.r;                             // fixed on-screen size at any scale
+    guardOrbBelowHud(o, p, M);             // never let one hide behind the HUD
+    if (dist2(o.x, o.y, p.x, p.y) < (p.r * 0.92 + o.r) ** 2) { takeMutationOrb(i); return; }
+  }
+}
+function takeMutationOrb(i) {
+  const orb = G.mutaOrbs[i];
+  if (!orb) return;
+  const p = G.player;
+  G.mutaOrbs = [];
+  FX.burst(orb.x, orb.y, RARITY_COLOR[orb.u.rarity] || "#7cff6b", 22, p.r * 0.06, p.r * 0.05, 0.7);
+  FX.ring(orb.x, orb.y, p.r * 2.6, RARITY_COLOR[orb.u.rarity] || "#7cff6b", 3);
+  pickUpgradeQuiet(orb.u);                  // handles its own float text + sfx
+  G.pendingChoices = Math.max(0, (G.pendingChoices || 0) - 1);
+  if (G.pendingChoices > 0) spawnMutationOrbs();
+}
+function drawMutationOrbs(c, t) {
+  if (!G.mutaOrbs || !G.mutaOrbs.length) return;
+  const M = orbMetrics();
+  // Pass 1: bodies + icons. Pass 2: labels — so a neighbouring orb can never
+  // sit on top of a label and clip the text.
+  G.mutaOrbs.forEach(o => {
+    const col = RARITY_COLOR[o.u.rarity] || "#9fb4c7";
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3 + o.wob);
+    const rr = o.r * (1 + pulse * 0.07);
+    if (!P.settings.reduced) drawGlow(c, col, o.x, o.y, rr * 3.2, 0.5);
+    c.beginPath(); c.arc(o.x, o.y, rr, 0, TAU);
+    c.fillStyle = hexA(col, 0.92); c.fill();
+    c.lineWidth = Math.max(1, rr * 0.1); c.strokeStyle = hexA("#ffffff", 0.75); c.stroke();
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.font = (rr * 1.0) + "px system-ui,-apple-system,sans-serif";
+    c.fillText(o.u.icon, o.x, o.y);
+  });
+  const pp = G.player;
+  G.mutaOrbs.forEach(o => {
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3 + o.wob);
+    const rr = o.r * (1 + pulse * 0.07);
+    c.textAlign = "center"; c.textBaseline = "middle";
+    // Label at a screen-space size with a legibility floor, on a dark plate so
+    // it stays readable against bright prey.
+    const lf = M.label;
+    c.font = "800 " + lf + "px Inter,system-ui,sans-serif";
+    const tw = c.measureText(o.u.name).width;
+    // Push each label radially OUTWARD from the player. Because the orbs sit on
+    // a fan, labels then land on a wider arc than the orbs themselves, so their
+    // spacing always exceeds the orb spacing — no collisions at any fan angle.
+    // (Alternating above/below failed when the fan happened to be vertical.)
+    let nx = o.x - pp.x, ny = o.y - pp.y;
+    const nd = Math.hypot(nx, ny) || 1;
+    nx /= nd; ny /= nd;
+    let lx = o.x + nx * rr * 1.55, ly = o.y + ny * rr * 1.55;
+    // Keep the plate fully on screen (render-space only — the orb itself does
+    // not move, so this can't affect where you have to steer to collect it).
+    const halfW = (tw / 2 + lf * 0.45), halfH = lf * 0.78;
+    let sx = W / 2 + (lx - pp.x) * M.z, sy = H / 2 + (ly - pp.y) * M.z;
+    const hwS = halfW * M.z, hhS = halfH * M.z;
+    if (hwS * 2 < W) sx = clamp(sx, hwS + 4, W - hwS - 4);
+    sy = clamp(sy, hhS + 4, H - hhS - 4);
+    lx = pp.x + (sx - W / 2) / M.z; ly = pp.y + (sy - H / 2) / M.z;
+    c.fillStyle = hexA("#050810", 0.78);
+    roundRect(c, lx - halfW, ly - halfH, tw + lf * 0.9, lf * 1.56, lf * 0.5);
+    c.fill();
+    c.fillStyle = "#ffffff";
+    c.fillText(o.u.name, lx, ly);
+  });
+  c.textAlign = "start"; c.textBaseline = "alphabetic";
 }
 
 /* ---------------- evolution ---------------- */
@@ -1805,25 +1930,32 @@ function checkEvolution() {
     checkBossSpawn();
   }
 }
+// Tiered fanfare. There are 20 evolutions but only 6 scale bands — giving all
+// 20 a full-screen flash + huge banner made the big moments meaningless and the
+// screen exhausting. Only a genuine SCALE change (Petri -> Underfoot -> Streets
+// -> Skyline -> Orbit -> Void) earns the full treatment now.
 function evolveFanfare() {
   const p = G.player, evo = EVOS[G.evoIndex];
+  const prevBand = bandFor(G.evoIndex - 1), band = bandFor(G.evoIndex);
+  const major = band !== prevBand;
   SFX.evolve();
-  FX.addHitstop(0.28 * G.stats.hitstopMult);
-  FX.addShake(16);
-  if (!P.settings.reduced) {
+  FX.addHitstop((major ? 0.28 : 0.10) * G.stats.hitstopMult);
+  FX.addShake(major ? 16 : 6);
+  if (major && !P.settings.reduced) {
     FX.flash = 1;
-    $("evoFlash").style.transition = "none"; $("evoFlash").style.opacity = 0.85;
+    $("evoFlash").style.transition = "none"; $("evoFlash").style.opacity = 0.7;
     requestAnimationFrame(() => { $("evoFlash").style.transition = "opacity .9s"; $("evoFlash").style.opacity = 0; });
   }
-  FX.ring(p.x, p.y, p.r * 6, "#ff4d9e", 7);
-  FX.ring(p.x, p.y, p.r * 9, "#00f5d4", 4);
-  FX.burst(p.x, p.y, "#fff", 36, p.r * 0.1, p.r * 0.07, 1.1);
+  FX.ring(p.x, p.y, p.r * 6, "#ff4d9e", major ? 7 : 4);
+  if (major) FX.ring(p.x, p.y, p.r * 9, "#00f5d4", 4);
+  FX.burst(p.x, p.y, "#fff", major ? 36 : 14, p.r * 0.1, p.r * 0.07, major ? 1.1 : 0.7);
   if (G.stats.evoHeal) G.stats.hp = G.stats.maxHp;
   $("stageToastName").textContent = evo.name;
-  const prevBand = bandFor(G.evoIndex - 1), band = bandFor(G.evoIndex);
   const sLabel = $("stageToastScale");
-  if (sLabel) sLabel.textContent = band !== prevBand ? "New Scale: " + band.name : "Evolution";
-  const t = $("stageToast"); t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
+  if (sLabel) sLabel.textContent = major ? "New Scale: " + band.name : "Evolution";
+  const t = $("stageToast");
+  t.classList.toggle("minor", !major);
+  t.classList.remove("show"); void t.offsetWidth; t.classList.add("show");
   checkAch();
 }
 
@@ -1847,6 +1979,19 @@ function finishRunCommon() {
 }
 // A short, human summary of the mutations that defined the run, weighted by
 // rarity × stacks, so each death/victory screen shows the build you actually played.
+// Feats unlocked during the run are collected silently and revealed here,
+// instead of interrupting play with a toast waterfall.
+function renderRunFeats(elId) {
+  const el = $(elId); if (!el) return;
+  const list = G.runAch || [];
+  if (!list.length) { el.innerHTML = ""; el.style.display = "none"; return; }
+  el.style.display = "";
+  const total = list.reduce((n, a) => n + a.reward, 0);
+  el.innerHTML = '<div style="font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--warn);margin-bottom:6px">'
+    + list.length + ' Feat' + (list.length > 1 ? 's' : '') + ' Unlocked · +' + fmtInt(total) + ' essence</div>'
+    + list.slice(0, 6).map(a => '<span style="display:inline-block;margin:0 8px 4px 0;font-size:12px;color:var(--dim)">' + a.icon + ' ' + a.name + '</span>').join("")
+    + (list.length > 6 ? '<span style="font-size:12px;color:var(--dim)">+' + (list.length - 6) + ' more</span>' : "");
+}
 function buildSummary() {
   const counts = runUpgradeCounts || {};
   const w = { legend: 4, epic: 3, rare: 2, common: 1 };
@@ -1870,6 +2015,7 @@ function gameOver(cause) {
   $("goEssence").textContent = "+" + fmtInt(ess);
   $("deathCause").textContent = "Destroyed by " + cause;
   const gb = $("goBuild"); if (gb) gb.innerHTML = buildSummary();
+  renderRunFeats("goFeats");
   $("goNewBest").classList.toggle("hidden", !newBest);
   setTimeout(() => { show("gameOverScreen"); hide("hud"); }, 700);
 }
@@ -1887,6 +2033,7 @@ function victory() {
   $("vTime").textContent = fmtTime(G.time);
   $("vEssence").textContent = "+" + fmtInt(ess);
   const vb = $("vBuild"); if (vb) vb.innerHTML = buildSummary();
+  renderRunFeats("vFeats");
   setTimeout(() => { show("victoryScreen"); hide("hud"); }, 1100);
 }
 
@@ -1907,8 +2054,15 @@ function checkAch() {
     try { ok = a.test(st); } catch (e) {}
     if (ok) {
       P.ach[a.id] = true; P.essence += a.reward; dirty = true;
-      const delay = Math.min(achToastQueue++ * 350, 2400);
-      setTimeout(() => { toast("<b>" + a.name + "</b><br>+" + a.reward + " essence", "gold", "Feat"); achToastQueue = Math.max(0, achToastQueue - 1); }, delay);
+      if (G.state === "play") {
+        // Mid-run: stay silent. Feats are collected and shown on the end screen
+        // — 100 achievements toasting live was the single worst noise source.
+        (G.runAch = G.runAch || []).push(a);
+        FX.text(G.player.x, G.player.y - G.player.r * 1.7, a.icon + " " + a.name, "#ffd04a", 0.95);
+      } else {
+        const delay = Math.min(achToastQueue++ * 350, 2400);
+        setTimeout(() => { toast("<b>" + a.name + "</b><br>+" + a.reward + " essence", "gold", "Feat"); achToastQueue = Math.max(0, achToastQueue - 1); }, delay);
+      }
     }
   }
   if (dirty) saveP();
@@ -1996,16 +2150,6 @@ window.addEventListener("keydown", e => {
     return;
   }
   
-  // Level-up mutation choice: pick with number keys
-  if (G.state === "levelup") {
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= (G.currentChoices ? G.currentChoices.length : 0)) {
-      e.preventDefault();
-      chooseUpgrade(n - 1);
-    }
-    return;
-  }
-
   // Game Over Screen Shortcuts
   if (G.state === "over") {
     if (e.key === " " || e.key === "Enter") {
@@ -2127,9 +2271,15 @@ function update(dt) {
   /* ---- combo decay ---- */
   if (G.comboT > 0) { G.comboT -= dt; if (G.comboT <= 0) { G.combo = 0; } }
 
-  /* ---- mutation choice waits for a lull (combo ended) so it never interrupts a
-         feeding streak; if several stack up, cash them in anyway ---- */
-  if (!P.settings.autoPick && G.pendingChoices > 0 && (G.combo === 0 || G.pendingChoices >= 3)) openLevelUpChoice();
+  /* ---- mutation orbs: offered in-world, eaten to choose. Never pauses. ---- */
+  if (P.settings.autoPick) {
+    // Toggled on mid-run: drain any queued offers instantly and clear the field.
+    if (G.mutaOrbs && G.mutaOrbs.length) G.mutaOrbs = [];
+    while (G.pendingChoices > 0) { autoMutateOne(); G.pendingChoices--; }
+  } else if (G.pendingChoices > 0) {
+    spawnMutationOrbs();
+  }
+  updateMutationOrbs(dt);
 
   /* ---- trail ---- */
   const trail = P.equippedTrail;
@@ -2190,7 +2340,7 @@ function update(dt) {
       sh.x += sh.vx * wdt; sh.y += sh.vy * wdt; sh.life -= wdt;
       if (sh.life <= 0) { G.playerShots.splice(i, 1); continue; }
       if (G.boss && dist2(sh.x, sh.y, G.boss.x, G.boss.y) < (G.boss.r + sh.r) ** 2) {
-        bossDamage((5 + p.r * 0.05) * s.bossDmg);
+        bossDamage(G.boss.maxHp * 0.010 * s.bossDmg);
         FX.burst(sh.x, sh.y, "#00f5d4", 6, sh.r, sh.r, 0.4);
         G.playerShots.splice(i, 1);
         continue;
@@ -2229,7 +2379,7 @@ function update(dt) {
       const a = p.orbA + k * TAU / s.orbiters;
       const ox = p.x + Math.cos(a) * oR, oy = p.y + Math.sin(a) * oR;
       if (G.boss && dist2(ox, oy, G.boss.x, G.boss.y) < (G.boss.r + hitR) ** 2) {
-        chipBoss((4 + p.r * 0.04) * s.bossDmg * dt * 6);
+        chipBoss(G.boss.maxHp * 0.008 * s.bossDmg * dt);
       }
       for (let i = G.objs.length - 1; i >= 0; i--) {
         const o = G.objs[i];
@@ -2257,7 +2407,7 @@ function update(dt) {
         o.vx += (o.x - p.x) / dd * p.r * 0.9 * dt; o.vy += (o.y - p.y) / dd * p.r * 0.9 * dt;
       }
     }
-    if (G.boss && dist2(p.x, p.y, G.boss.x, G.boss.y) < (aR + G.boss.r) ** 2) chipBoss((1.5 + p.r * 0.02) * s.aura * s.bossDmg * dt);
+    if (G.boss && dist2(p.x, p.y, G.boss.x, G.boss.y) < (aR + G.boss.r) ** 2) chipBoss(G.boss.maxHp * 0.004 * s.aura * s.bossDmg * dt);
   }
 
   /* ---- Phase Fang: dashing devours prey you pass through (and lets you punch
@@ -2442,7 +2592,8 @@ function updateBoss(wdt, dt) {
       toast("<b>" + b.name + "</b> enters <b>" + names[targetPhase] + "</b>", "danger", "Final Phase");
       FX.flash = 0.5;
     } else {
-      toast("<b>" + b.name + "</b> " + (targetPhase === 1 ? "grows furious" : "is enraged"), "danger", "Threat");
+      // in-world, on the boss itself — you're looking at it, not the corner
+      FX.text(b.x, b.y - b.r * 1.2, targetPhase === 1 ? "FURIOUS" : "ENRAGED", "#ff4d5e", 1.4);
     }
   }
   const rage = 1 + 0.18 * b.phaseIdx;
@@ -2531,7 +2682,7 @@ function updateBoss(wdt, dt) {
     b.didSplit = true;
     for (let i = 0; i < 6; i++) spawnShard(b.x + rand(-b.r, b.r) * 1.4, b.y + rand(-b.r, b.r) * 1.4, G.xpNeed * 0.06);
     FX.burst(b.x, b.y, b.color, 30, b.r * 0.05, b.r * 0.06, 0.9);
-    toast("<b>" + b.name + "</b> ruptures — feed on the shards", "danger", "Threat");
+    FX.text(b.x, b.y - b.r * 1.2, "RUPTURED", "#ff4d5e", 1.4);
   }
   /* feed the fight: bosses periodically shed edible shards so you can grow */
   b.shedT = (b.shedT || 3) - wdt;
@@ -2542,7 +2693,10 @@ function updateBoss(wdt, dt) {
     if (canBite && p.biteCd <= 0) {
       p.biteCd = 0.3;
       if (G.tut) G.tut.bossBitten = true;
-      const dmg = (6 + p.r * 0.085) * s.bossDmg;
+      // Fraction of the boss's own HP, not the player's radius. Player damage
+      // used to scale with r while boss HP stayed fixed, so late-game bosses
+      // died in ~2 seconds. This keeps every boss ~29 bites at any scale.
+      const dmg = b.maxHp * 0.035 * s.bossDmg;
       bossDamage(dmg);
       if (G.fusions && G.fusions.reaverRage && p.rageT > 0) {
         s.hp = Math.min(s.maxHp, s.hp + 2);
@@ -2557,7 +2711,7 @@ function updateBoss(wdt, dt) {
       const k = b.r * 0.4; b.vx += -dx / d * k; b.vy += -dy / d * k;
     } else if (!canBite) {
       hurt(16, b.name, b.x, b.y);
-      if (s.thorns && G.boss) bossDamage(16 * s.thorns);
+      if (s.thorns && G.boss) bossDamage(G.boss.maxHp * 0.01 * s.thorns);
     }
   }
 }
@@ -2584,7 +2738,7 @@ function mod(n, m) { return ((n % m) + m) % m; }
 
 function render() {
   const c = ctx2d, p = G.player;
-  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "over" || G.state === "victory" || G.state === "levelup");
+  const playing = p && (G.state === "play" || G.state === "pause" || G.state === "over" || G.state === "victory");
   const t = performance.now() / 1000;
   const band = bandFor(playing ? G.evoIndex : 0);
   /* background gradient: world tint at small scale -> cosmic at large */
@@ -2680,6 +2834,8 @@ function render() {
       c.fillStyle = "#ffffff"; c.fill();
     }
   }
+  /* mutation orbs */
+  drawMutationOrbs(c, t);
   /* universe core */
   if (G.victoryCore) drawCore(c, G.victoryCore, t);
   /* boss */
