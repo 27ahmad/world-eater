@@ -1202,7 +1202,7 @@ function spawnObject(initial) {
   }
   let sizeScale = 1.0;
   if (G.mode === "endless" && p.r > EVOR[19]) {
-    sizeScale = p.r / EVOR[19];
+    sizeScale = Math.min(p.r / EVOR[19], MAX_R / EVOR[19]);   // keep o.r*o.r finite
   }
   const base = EVOR[tier] * sizeScale;
   let r;
@@ -1487,10 +1487,18 @@ function addXp(v) {
   }
   // Mutations are offered as in-world orbs (see spawnMutationOrbs), never a modal.
 }
+// Endless scales spawned objects with the player, so growth compounds without
+// bound. Left unguarded, o.r*o.r eventually overflows to Infinity and targetR
+// becomes NaN (~10 min into an endless run), which breaks the run outright.
+// MAX_R is astronomically larger than the final evolution (3.4e4) yet keeps
+// every squared term far from float overflow.
+const MAX_R = 1e15;
 function growBy(amount) {
+  if (!isFinite(amount) || amount <= 0) return;
   let mult = G.stats.growMult;
   if (G.stats.feastGrow && G.combo >= 25) mult *= 1.5;
-  G.player.targetR += amount * mult;
+  const next = G.player.targetR + amount * mult;
+  if (isFinite(next)) G.player.targetR = Math.min(next, MAX_R);
 }
 function eatValue(o) { return Math.pow(o.r / G.player.r, 1.1) * (4 + G.evoIndex * 2); }
 
@@ -1758,7 +1766,7 @@ function pickUpgradeQuiet(u) {
   const beforeMax = s.maxHp;
   u.apply(s);
   if (s.heal) { s.hp = Math.min(s.maxHp, s.hp + s.heal + (s.maxHp - beforeMax)); s.heal = 0; }
-  if (s.instaGrow) { G.player.targetR *= s.instaGrow; s.instaGrow = 0; }
+  if (s.instaGrow) { G.player.targetR = Math.min(G.player.targetR * s.instaGrow, MAX_R); s.instaGrow = 0; }
   if (u.rarity === "legend") G.run.legendPicked = true;
   P.totalUpgrades++; G.upCount++;
   saveP();
