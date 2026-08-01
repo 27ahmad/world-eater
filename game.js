@@ -33,7 +33,10 @@ function fmtSize(r) {
   if (m < 9.46e15) return (m / 1.39e9).toFixed(1) + "× Sun";
   if (m < 9.46e18) return (m / 9.46e15).toFixed(1) + " ly";
   if (m < 9.46e21) return (m / 9.46e18).toFixed(1) + " k.ly";
-  return (m / 9.46e21).toFixed(2) + " M.ly";
+  // Past the observable universe (8.8e26 m) "970329.33 M.ly" is unreadable
+  // noise. Say the thing the number is actually for.
+  if (m < 8.8e26) return (m / 9.46e21).toFixed(2) + " M.ly";
+  return (m / 8.8e26).toFixed(2) + "× Universe";
 }
 const $ = id => document.getElementById(id);
 
@@ -999,7 +1002,7 @@ const ctx2d = canvas.getContext("2d");
 let W = 0, H = 0, DPR = 1;
 function resize() {
   DPR = P.settings.perf ? 1 : Math.min(window.devicePixelRatio || 1, Quality.dprCap());
-  W = window.innerWidth; H = window.innerHeight;
+  W = Math.max(1, window.innerWidth); H = Math.max(1, window.innerHeight);
   canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
   canvas.style.width = W + "px"; canvas.style.height = H + "px";
   ctx2d.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -1027,7 +1030,12 @@ function triggerManualDash() {
   if (G.player.manualDashCd > 0) return;
   if (G.tut) G.tut.dashed = true;
   G.player.manualDashCd = 1.5;
-  G.player.targetR = Math.max(EVOR[0] * 0.5, G.player.targetR * 0.98);
+  // Dash used to cost 2% of targetR with an ABSOLUTE floor of EVOR[0]*0.5. Since
+  // p.r only ever grows toward targetR (never shrinks to meet it), that cost was
+  // invisible AND compounding: dash enough and targetR sank far below your actual
+  // radius, after which every meal was spent refilling the gap and you simply
+  // stopped growing. Bot runs got permanently stuck at evo 0 for 10+ minutes.
+  // The 1.5s cooldown is cost enough for a game whose whole point is getting bigger.
   G.player.dashT = 0.35;
   G.player.iframe = Math.max(G.player.iframe, 0.35);
   SFX.ui();
@@ -1159,7 +1167,11 @@ function startRun() {
 /* ---------------- spawning ---------------- */
 function viewRadius() {
   const z = camZoom();
-  return Math.hypot(W, H) / (2 * z);
+  // Floor it against the player's own size. A hidden tab or an iframe that
+  // reports a 0x0 viewport otherwise yields vr = 0, and every object then spawns
+  // exactly on top of you and is swallowed on the first frame. The floor is well
+  // below the ~10r a real viewport produces, so normal play never touches it.
+  return Math.max(Math.hypot(W, H) / (2 * z), (G.player ? G.player.r : 1) * 6);
 }
 // Threat ramp: rises with survival time and evolution, capped so late game stays fair.
 // Standard/endless push hardest; rush starts already tense; zen never ramps.
@@ -1170,7 +1182,9 @@ function difficulty() {
 }
 function camZoom() {
   if (!G.player) return 1;
-  return clamp((Math.min(W, H) * 0.10) / G.player.r, 0.00012, 8) / (G.stats ? G.stats.zoomOut : 1);
+  // Clamp AFTER Far Sight's divisor, not before — stacking zoomOut used to push
+  // the zoom below its own floor, shrinking the player to a few pixels.
+  return clamp((Math.min(W, H) * 0.10) / G.player.r / (G.stats ? G.stats.zoomOut : 1), 0.00012, 8);
 }
 function tierName(tier, idx) {
   const sk = G.world.skin;
@@ -1183,13 +1197,27 @@ function spawnObject(initial) {
   const p = G.player;
   const stage = G.evoIndex;
   const roll = Math.random();
-  let tier = stage + (roll < 0.42 ? 0 : roll < 0.66 ? -1 : roll < 0.90 ? 1 : 2);
+  // Oversized spawns are rarer than they were (was 34% at +1/+2). A tier-up
+  // object has ~2.5x the radius and ~6x the screen area of a peer, so at the old
+  // rate roughly half the count but the great majority of the visible field was
+  // stuff you couldn't eat — and now that it physically blocks you, that also
+  // made the early game a maze.
+  let tier = stage + (roll < 0.46 ? 0 : roll < 0.72 ? -1 : roll < 0.93 ? 1 : 2);
   if (G.mode === "zen") {
     tier = Math.min(tier, G.evoIndex);
   }
+  // At the top of the ladder the +1/+2 rolls used to clamp back down to 19, so
+  // the final stage — the one where you fight the last four bosses — spawned
+  // literally nothing you couldn't swallow. Carry the overflow into raw size
+  // instead: apex predators of the last tier, bigger than you and still hunting.
+  const apex = Math.max(0, tier - 19);
   tier = clamp(tier, 0, 19);
-  const enemyChance = clamp((0.13 + stage * 0.005) * difficulty(), 0, 0.42);
-  const isEnemy = G.mode === "zen" ? false : Math.random() < enemyChance && G.time > 3;
+  // Nudged up now that inert scenery only shoulders you instead of shredding
+  // you: pressure should come from things that chose to hunt you.
+  const enemyChance = clamp((0.16 + stage * 0.006) * difficulty(), 0, 0.48);
+  const isEnemy = G.mode === "zen" ? false
+    : apex > 0 ? Math.random() < 0.7                       // apex spawns mostly hunt
+    : Math.random() < enemyChance && G.time > 3;
   let def, name, color, shape, ai = null;
   if (isEnemy) {
     const idx = randi(0, 1);
@@ -1206,9 +1234,10 @@ function spawnObject(initial) {
   }
   const base = EVOR[tier] * sizeScale;
   let r;
-  if (tier <= stage) r = base * rand(0.42, 0.92);                 // edible-ish
+  if (apex > 0) r = Math.max(base, p.r) * rand(1.1, 1.15 + apex * 0.25); // apex predator
+  else if (tier <= stage) r = base * rand(0.42, 0.92);            // edible-ish
   else r = base * rand(0.7, 1.05);                                 // threats
-  if (tier === stage && Math.random() < 0.25) r = base * rand(0.95, 1.25); // near-peers
+  if (apex === 0 && tier === stage && Math.random() < 0.25) r = base * rand(0.95, 1.25); // near-peers
   const ang = Math.random() * TAU;
   const d = initial ? viewRadius() * rand(0.25, 1.0) : viewRadius() * rand(1.15, 1.9);
   const o = {
@@ -1276,7 +1305,7 @@ const TUT_STEPS = [
   { text: "Drag, or use WASD, to move", test: () => G.tut.moved > G.player.r * 8 },
   { text: "Devour 5 things smaller than you", test: () => G.eaten - G.tut.eats0 >= 5 },
   { text: "Fill the teal bar — mutations choose themselves from your diet", test: () => G.level >= 2 },
-  { text: "Press Space, or double-tap, to dash", test: () => G.tut.dashed },
+  { text: "Press Space, or double-tap, to dash — a dash swallows prey just too big", test: () => G.tut.dashed },
   { text: "Keep eating until you evolve", test: () => G.evoIndex >= 1 || G.mode === "rush" },
   { text: "A rival is coming — bite it once you match its size", needsBoss: true, test: () => G.tut.bossBitten }
 ];
@@ -1493,12 +1522,32 @@ function addXp(v) {
 // MAX_R is astronomically larger than the final evolution (3.4e4) yet keeps
 // every squared term far from float overflow.
 const MAX_R = 1e15;
+// The content ceiling. Prey, enemies and scale bands all stop at EVOR[19]
+// (34,248), but growth used to be unbounded: a standard run reached r = 3.1e6
+// — 91x the largest thing the game can spawn — so the whole world rendered as
+// invisible dust and camZoom pinned to its floor. Endless was worse: it walked
+// all the way to MAX_R and then silently stopped growing with nothing to say so.
+// Past the final evolution there is nothing left to out-scale, so growth caps
+// here and the surplus pays out as score instead of breaking the camera.
+const GROWTH_CEIL = EVOR[19] * 1.25;
 function growBy(amount) {
   if (!isFinite(amount) || amount <= 0) return;
+  const p = G.player;
+  // targetR must never sit below the radius already drawn on screen, or meals
+  // get spent refilling an invisible deficit instead of growing you.
+  if (p.targetR < p.r) p.targetR = p.r;
   let mult = G.stats.growMult;
   if (G.stats.feastGrow && G.combo >= 25) mult *= 1.5;
-  const next = G.player.targetR + amount * mult;
-  if (isFinite(next)) G.player.targetR = Math.min(next, MAX_R);
+  const next = p.targetR + amount * mult;
+  if (!isFinite(next)) return;
+  if (next > GROWTH_CEIL) {
+    // Apex: you are as large as this universe can render. Convert the overflow
+    // into score so eating still pays, and keep the world legible.
+    p.targetR = GROWTH_CEIL;
+    G.score += Math.floor((next - GROWTH_CEIL) / GROWTH_CEIL * 400 * G.stats.scoreMult);
+    return;
+  }
+  p.targetR = Math.min(next, MAX_R);
 }
 function eatValue(o) { return Math.pow(o.r / G.player.r, 1.1) * (4 + G.evoIndex * 2); }
 
@@ -1766,7 +1815,7 @@ function pickUpgradeQuiet(u) {
   const beforeMax = s.maxHp;
   u.apply(s);
   if (s.heal) { s.hp = Math.min(s.maxHp, s.hp + s.heal + (s.maxHp - beforeMax)); s.heal = 0; }
-  if (s.instaGrow) { G.player.targetR = Math.min(G.player.targetR * s.instaGrow, MAX_R); s.instaGrow = 0; }
+  if (s.instaGrow) { G.player.targetR = Math.min(G.player.targetR * s.instaGrow, GROWTH_CEIL); s.instaGrow = 0; }
   if (u.rarity === "legend") G.run.legendPicked = true;
   P.totalUpgrades++; G.upCount++;
   saveP();
@@ -1951,8 +2000,14 @@ function evolveFanfare() {
   FX.addShake(major ? 16 : 6);
   if (major && !P.settings.reduced) {
     FX.flash = 1;
-    $("evoFlash").style.transition = "none"; $("evoFlash").style.opacity = 0.7;
-    requestAnimationFrame(() => { $("evoFlash").style.transition = "opacity .9s"; $("evoFlash").style.opacity = 0; });
+    const ef = $("evoFlash");
+    ef.style.transition = "none"; ef.style.opacity = 0.7;
+    // Clear on a timer as well as on the next frame: rAF is suspended while a
+    // tab is in the background, so evolving just before you switch away used to
+    // leave the white overlay pinned at 0.7 over the whole game when you came back.
+    const clearFlash = () => { ef.style.transition = "opacity .9s"; ef.style.opacity = 0; };
+    requestAnimationFrame(clearFlash);
+    setTimeout(clearFlash, 60);
   }
   FX.ring(p.x, p.y, p.r * 6, "#ff4d9e", major ? 7 : 4);
   if (major) FX.ring(p.x, p.y, p.r * 9, "#00f5d4", 4);
@@ -2421,13 +2476,24 @@ function update(dt) {
   /* ---- Phase Fang: dashing devours prey you pass through (and lets you punch
          slightly above your weight); a kill refreshes the dash so you can chain
          across the field. A skill-based mobility/assassin archetype. ---- */
-  if (s.phaseFang && p.dashT > 0) {
+  // A dash now punches slightly above your weight for EVERY build, not just the
+  // one legendary. Dash is the only skill-expressive verb in the game; making it
+  // a real risk/reward move — line up a near-peer you can't normally swallow and
+  // commit — gives every run something to play well. Phase Fang is still the
+  // upgrade: a wider bite, a longer stun, and a kill that refunds the dash so you
+  // can chain across the field.
+  if (p.dashT > 0) {
+    const fang = s.phaseFang;
+    const margin = fang ? 0.25 : 0.12;
+    const grabR = p.r * (fang ? 1.05 : 0.95);
     for (let i = G.objs.length - 1; i >= 0; i--) {
       const o = G.objs[i];
       if (!o || o.shape === "shard") continue;
-      if (dist2(p.x, p.y, o.x, o.y) < (p.r * 1.05 + o.r * 0.6) ** 2) {
-        if (o.r < p.r * (1 + s.biteSize + 0.25)) { G.objs.splice(i, 1); consume(o, true); p.manualDashCd = 0; }
-        else if (o.ai) { o.stun = Math.max(o.stun || 0, 1.5); }
+      if (dist2(p.x, p.y, o.x, o.y) < (grabR + o.r * 0.6) ** 2) {
+        if (o.r < p.r * (1 + s.biteSize + margin)) {
+          G.objs.splice(i, 1); consume(o, true);
+          if (fang) p.manualDashCd = 0;
+        } else if (o.ai) { o.stun = Math.max(o.stun || 0, fang ? 1.5 : 0.6); }
       }
     }
   }
@@ -2481,11 +2547,31 @@ function update(dt) {
       if (d < reach + o.r * 0.25) { toConsume.push(o); continue; }
     } else if (d < p.r * 0.8 + o.r * 0.72) {
       const ratio = o.r / p.r;
-      let dmg = clamp(6 + ratio * 6, 6, 26) * (0.85 + (diff - 1) * 0.55);
-      if (o.elite) dmg *= 1.5;
-      if (ratio > 1.6) dmg *= s.bigArmor;
-      if (G.fusions && G.fusions.ironClad && ratio > 1.0) dmg *= 0.6;
-      hurt(dmg, o.name, o.x, o.y);
+      // Roughly half the field is too big to eat, and it USED to all hurt exactly
+      // the same: a parked Delivery Van bit as hard as a Wolf Spider. That made
+      // most damage unavoidable chip from scenery you were only navigating past,
+      // and it's why runs died at 40s for no readable reason.
+      // Now: hunters (o.ai) hurt. Inert scenery is a WALL — it shoulders you out
+      // of the way, and only genuinely crushing mass (1.5x+) still stings.
+      if (!o.ai) {
+        const push = (p.r * 0.8 + o.r * 0.72) - d;
+        const nx = dx / Math.max(d, 1), ny = dy / Math.max(d, 1);
+        p.x += nx * push; p.y += ny * push;
+        // kill the inbound component of velocity so you slide along, not stick
+        const inward = p.vx * -nx + p.vy * -ny;
+        if (inward > 0) { p.vx += nx * inward; p.vy += ny * inward; }
+        if (ratio > 1.5) {
+          let dmg = clamp(3 + ratio * 2.2, 3, 12) * (0.85 + (diff - 1) * 0.55);
+          if (G.fusions && G.fusions.ironClad) dmg *= 0.6;
+          hurt(dmg * s.bigArmor, o.name, o.x, o.y);
+        }
+      } else {
+        let dmg = clamp(7 + ratio * 7, 7, 30) * (0.85 + (diff - 1) * 0.55);
+        if (o.elite) dmg *= 1.5;
+        if (ratio > 1.6) dmg *= s.bigArmor;
+        if (G.fusions && G.fusions.ironClad && ratio > 1.0) dmg *= 0.6;
+        hurt(dmg, o.name, o.x, o.y);
+      }
     }
     /* enemy AI */
     if (o.ai && o.stun <= 0) {
@@ -3451,21 +3537,35 @@ function drawObject(c, o, t, z) {
     }
     c.restore();
   }
-  /* threat ring */
+  /* threat ring — RED MEANS HUNTED.
+     Nearly half the field is too big to eat at any given moment, and painting
+     every last brick and bus with the same pulsing red alarm ring made the
+     screen read as wall-to-wall panic while telling you nothing. Red is now
+     reserved for things that actually come after you; inert scenery gets a
+     quiet slate outline that just says "not yet". */
   if (danger && o.shape !== "shard") {
-    const pulse = 0.35 + 0.25 * Math.sin(t * 5 + o.wob);
-    c.globalAlpha = pulse;
-    c.strokeStyle = P.settings.cb ? "#ff9a3d" : "#ff3a5e";
-    c.lineWidth = Math.max(o.r * 0.07, 1.2 / z);
-    if (P.settings.cb) c.setLineDash([o.r * 0.25, o.r * 0.16]);
-    c.beginPath(); c.arc(0, 0, o.r * 1.22, 0, TAU); c.stroke();
-    c.setLineDash([]);
-    if (P.settings.cb) { // pattern-coded "!" marker for colorblind players
-      c.globalAlpha = 0.9;
-      c.fillStyle = "#ff9a3d";
-      c.font = "900 " + (o.r * 0.7) + "px sans-serif";
-      c.textAlign = "center";
-      c.fillText("!", 0, -o.r * 1.45);
+    if (o.ai) {
+      const pulse = 0.35 + 0.25 * Math.sin(t * 5 + o.wob);
+      c.globalAlpha = pulse;
+      c.strokeStyle = P.settings.cb ? "#ff9a3d" : "#ff3a5e";
+      c.lineWidth = Math.max(o.r * 0.07, 1.2 / z);
+      if (P.settings.cb) c.setLineDash([o.r * 0.25, o.r * 0.16]);
+      c.beginPath(); c.arc(0, 0, o.r * 1.22, 0, TAU); c.stroke();
+      c.setLineDash([]);
+      if (P.settings.cb) { // pattern-coded "!" marker for colorblind players
+        c.globalAlpha = 0.9;
+        c.fillStyle = "#ff9a3d";
+        c.font = "900 " + (o.r * 0.7) + "px sans-serif";
+        c.textAlign = "center";
+        c.fillText("!", 0, -o.r * 1.45);
+      }
+    } else {
+      c.globalAlpha = 0.18;
+      c.strokeStyle = "#8fa3b8";
+      c.lineWidth = Math.max(o.r * 0.028, 1 / z);
+      c.setLineDash([o.r * 0.11, o.r * 0.13]);
+      c.beginPath(); c.arc(0, 0, o.r * 1.11, 0, TAU); c.stroke();
+      c.setLineDash([]);
     }
     c.globalAlpha = 1;
   }
