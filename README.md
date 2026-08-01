@@ -10,9 +10,10 @@ Play the game here: https://27ahmad.github.io/world-eater/
 - Drag or move mouse (or WASD / arrow keys) to move the player mote.
 - Devour objects smaller than you to grow.
 - On level-up, three mutation orbs appear around you — **swim into the one you want**. The game never pauses to ask. Prefer it automatic? Turn on **Auto-pick mutations** in Settings.
-- Threats grow faster and hit harder the longer you survive, and some hunters spawn as **elites** (ringed in red) — bigger, faster, and worth far more.
+- **Red ring = it is hunting you.** A quiet dashed outline just means "too big to eat yet" — inert scenery shoulders you aside instead of hurting you, so the damage on screen is always something that chose to come after you.
+- Threats grow faster and hit harder the longer you survive, and some hunters spawn as **elites** (ringed in red) — bigger, faster, and worth far more. At the final evolution, **apex predators** still outsize you.
 - Getting hit halves your combo instead of wiping it; streaks of 25/50/100 heal you.
-- Press Space, Shift, F, or E (or double-tap on touch) to dash.
+- Press Space, Shift, F, or E (or double-tap on touch) to dash. **A dash swallows prey slightly too big to eat normally** — the Phase Fang mutation widens that window and refunds the dash on a kill.
 - Press M to toggle mute/unmute audio.
 - Press Escape or P to pause.
 - Press Enter to resume while paused.
