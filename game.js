@@ -2669,6 +2669,16 @@ function updateBoss(wdt, dt) {
   b.fleeT = Math.max(0, (b.fleeT || 0) - wdt);
   const dx = p.x - b.x, dy = p.y - b.y;
   const d = Math.max(1, Math.hypot(dx, dy));
+  /* Keep the boss on the player's scale.
+     b.r used to be frozen at spawn (p.r * 1.4) while the player kept eating and
+     growing, so a boss you didn't kill in the first few seconds shrank into a
+     speck: ~10px on screen after 45s of ordinary play, indistinguishable from
+     food, and — because chase speed is derived from b.r — far too slow to ever
+     reach you again. That's the "I got big and could never find the boss" bug.
+     The floor sits below the bite gate (p.r >= b.r * 0.8), so out-growing a
+     fresh boss to unlock damage still works exactly as before. */
+  const floorR = p.r * 0.62;
+  if (b.r < floorR) b.r = lerp(b.r, floorR, 1 - Math.pow(0.06, wdt));
   /* escalation: bosses get faster and meaner at 66% and 33% HP */
   const frac = b.hp / b.maxHp;
   const targetPhase = frac < 0.33 ? 2 : frac < 0.66 ? 1 : 0;
@@ -2691,12 +2701,20 @@ function updateBoss(wdt, dt) {
     }
   }
   const rage = 1 + 0.18 * b.phaseIdx;
-  const sp = b.r * 0.95 * rage;
+  /* Pursuit speed is anchored to the PLAYER's scale rather than b.r, so the boss
+     hunts you instead of trailing behind. At 2.05 it reaches ~0.66x the player's
+     base top speed (p.r * 3.1), rising to ~0.9x at full rage — a boss that closes
+     on you if you idle but that you can still out-run, and out-run further with
+     any speed mutation or a dash. */
+  const sp = p.r * 2.05 * rage;
+  /* Dash factor is retuned against the new sp to preserve the old lunge speed
+     (~5.9 * p.r). Leaving it at 4.4 would have made the lunge unavoidable. */
+  const DASH_MUL = 2.85;
   /* movement phases */
   if (b.phase === "windup") {
     b.telA += wdt;
     b.vx *= Math.pow(0.01, wdt); b.vy *= Math.pow(0.01, wdt);
-    if (b.telA > 0.9 - 0.15 * b.phaseIdx) { b.phase = "dash"; b.telA = 0; b.vx = dx / d * sp * 4.4; b.vy = dy / d * sp * 4.4; SFX.crunch(); FX.addShake(6); }
+    if (b.telA > 0.9 - 0.15 * b.phaseIdx) { b.phase = "dash"; b.telA = 0; b.vx = dx / d * sp * DASH_MUL; b.vy = dy / d * sp * DASH_MUL; SFX.crunch(); FX.addShake(6); }
   } else if (b.phase === "dash") {
     b.telA += wdt;
     if (b.telA > 0.7) {
@@ -2829,6 +2847,132 @@ function roundRect(c, x, y, w, h, r) {
   c.closePath();
 }
 function mod(n, m) { return ((n % m) + m) % m; }
+
+/* ---------------- offscreen trackers ----------------
+   The old boss pointer only appeared once the boss's CENTRE left the viewport
+   and drew a 12px triangle with no distance cue, so players lost track of the
+   fight constantly. These two helpers replace it: visibility is measured
+   against the target's body inside a HUD-safe rect, and the marker carries a
+   name plus a distance readout. */
+
+// True when enough of the target's body sits inside the safe viewing area that
+// the player can actually see it — a sliver poking past the bezel doesn't count.
+function markerVisible(o, p, z) {
+  const sx = (o.x - p.x) * z + W / 2, sy = (o.y - p.y) * z + H / 2;
+  const rs = o.r * z, inset = 40;
+  return sx + rs > inset && sx - rs < W - inset && sy + rs > inset && sy - rs < H - inset;
+}
+
+/* Screen-space reticle around an on-screen target. Drawn in pixels, not world
+   units, so a boss that has been out-grown still reads as THE boss instead of
+   blending into the food it's floating among. */
+function drawTargetLock(c, t, o, p, z, color, label) {
+  const sx = (o.x - p.x) * z + W / 2, sy = (o.y - p.y) * z + H / 2;
+  const rp = Math.max(o.r * z * 1.35, 30);          // never collapses to a dot
+  const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+  c.save();
+  c.translate(sx, sy);
+  if (!P.settings.reduced) {
+    const g = c.createRadialGradient(0, 0, rp * 0.5, 0, 0, rp * 2.2);
+    g.addColorStop(0, hexA(color, 0.20 + pulse * 0.10));
+    g.addColorStop(1, hexA(color, 0));
+    c.fillStyle = g;
+    c.beginPath(); c.arc(0, 0, rp * 2.2, 0, TAU); c.fill();
+  }
+  /* four corner brackets — reads as "target", not as another blob outline */
+  c.strokeStyle = hexA(color, 0.75 + pulse * 0.25);
+  c.lineWidth = 2.5; c.lineCap = "round";
+  for (let i = 0; i < 4; i++) {
+    c.save();
+    c.rotate(i * Math.PI / 2 + Math.PI / 4 + t * 0.35);
+    c.beginPath();
+    c.arc(0, 0, rp, -0.34, 0.34);
+    c.stroke();
+    c.restore();
+  }
+  const name = label.length > 16 ? label.slice(0, 15) + "…" : label;
+  c.font = "900 11px Inter, system-ui, sans-serif";
+  c.textAlign = "center";
+  c.strokeStyle = "rgba(0,0,0,0.8)"; c.lineWidth = 3.5;
+  c.strokeText(name.toUpperCase(), 0, -rp - 10);
+  c.fillStyle = color;
+  c.fillText(name.toUpperCase(), 0, -rp - 10);
+  c.restore();
+}
+
+function drawEdgeMarker(c, t, o, p, z, color, label, big) {
+  const dx = (o.x - p.x) * z, dy = (o.y - p.y) * z;
+  if (!dx && !dy) return;
+  const cx = W / 2, cy = H / 2;
+  /* Safe rect: clear of the top HUD row and the bottom boss health bar, so the
+     marker never hides behind a DOM overlay. */
+  const L = 48, R = Math.max(L + 1, W - 48);
+  const T = Math.min(88, cy - 8), B = Math.max(H - 148, cy + 8);
+  let k = Infinity;
+  if (dx > 0) k = Math.min(k, (R - cx) / dx); else if (dx < 0) k = Math.min(k, (L - cx) / dx);
+  if (dy > 0) k = Math.min(k, (B - cy) / dy); else if (dy < 0) k = Math.min(k, (T - cy) / dy);
+  if (!isFinite(k) || k <= 0) return;
+  const mx = cx + dx * k, my = cy + dy * k, ang = Math.atan2(dy, dx);
+
+  /* Distance in screen-space units so the number means the same thing at every
+     zoom level — 40px of view = 1 unit. */
+  const dpx = Math.hypot(dx, dy);
+  const units = Math.max(1, Math.round(dpx / 40));
+  const near = clamp(1 - dpx / (Math.hypot(W, H) * 1.6), 0, 1); // 0 far → 1 close
+  const pulse = 0.5 + 0.5 * Math.sin(t * (5 + near * 7));
+  const s = big ? 1 : 0.82;
+
+  c.save();
+  /* directional bleed so the eye is pulled to that edge even in a busy frame */
+  if (!P.settings.reduced) {
+    const g = c.createRadialGradient(mx, my, 0, mx, my, 150 * s);
+    g.addColorStop(0, hexA(color, 0.28 + pulse * 0.16));
+    g.addColorStop(1, hexA(color, 0));
+    c.fillStyle = g;
+    c.beginPath(); c.arc(mx, my, 150 * s, 0, TAU); c.fill();
+  }
+
+  /* arrow */
+  c.save();
+  c.translate(mx, my);
+  c.rotate(ang);
+  const a = (1 + 0.12 * pulse) * s;
+  c.beginPath();
+  c.moveTo(26 * a, 0);
+  c.lineTo(-10 * a, -15 * a);
+  c.lineTo(-4 * a, 0);
+  c.lineTo(-10 * a, 15 * a);
+  c.closePath();
+  c.fillStyle = color;
+  c.strokeStyle = "rgba(0,0,0,0.75)"; c.lineWidth = 3; c.lineJoin = "round";
+  c.stroke(); c.fill();
+  c.restore();
+
+  /* label chip, pushed inward from the arrow and kept fully on screen */
+  const name = label.length > 16 ? label.slice(0, 15) + "…" : label;
+  c.font = "900 " + Math.round(11 * s) + "px Inter, system-ui, sans-serif";
+  const tw = c.measureText(name).width;
+  c.font = "700 " + Math.round(10 * s) + "px Inter, system-ui, sans-serif";
+  const dw = c.measureText(units + "m").width;
+  const bw = Math.max(tw, dw) + 18 * s, bh = 32 * s;
+  let bx = mx - Math.cos(ang) * (46 * s + bw * 0.35);
+  let by = my - Math.sin(ang) * (46 * s + bh * 0.6);
+  bx = clamp(bx, bw / 2 + 4, W - bw / 2 - 4);
+  by = clamp(by, bh / 2 + 4, H - bh / 2 - 4);
+
+  roundRect(c, bx - bw / 2, by - bh / 2, bw, bh, 7 * s);
+  c.fillStyle = "rgba(6,8,14,0.78)"; c.fill();
+  c.strokeStyle = hexA(color, 0.55 + pulse * 0.35); c.lineWidth = 1.5; c.stroke();
+
+  c.textAlign = "center";
+  c.font = "900 " + Math.round(11 * s) + "px Inter, system-ui, sans-serif";
+  c.fillStyle = color;
+  c.fillText(name.toUpperCase(), bx, by - 2 * s);
+  c.font = "700 " + Math.round(10 * s) + "px Inter, system-ui, sans-serif";
+  c.fillStyle = "rgba(255,255,255,0.72)";
+  c.fillText(units + "m", bx, by + 11 * s);
+  c.restore();
+}
 
 function render() {
   const c = ctx2d, p = G.player;
@@ -2976,77 +3120,19 @@ function render() {
   /* Offscreen Threat Indicators (HUD Arrows) */
   if (G.state === "play") {
     const margin = 28;
-    // 1. Offscreen Boss pointer
+    // 1. Boss tracker — reticle when it's in frame, edge arrow when it isn't
     if (G.boss) {
-      const sx = (G.boss.x - p.x) * z + W / 2;
-      const sy = (G.boss.y - p.y) * z + H / 2;
-      if (sx < 0 || sx > W || sy < 0 || sy > H) {
-        // Boss is offscreen! Render pointer.
-        const angle = Math.atan2(sy - H / 2, sx - W / 2);
-        const px = clamp(sx, margin, W - margin);
-        const py = clamp(sy, margin, H - margin);
-        
-        c.save();
-        c.translate(px, py);
-        c.rotate(angle);
-        
-        // Draw red pulsing pointer triangle
-        const pulse = 1 + 0.15 * Math.sin(t * 10);
-        c.fillStyle = "#ff3a5e";
-        c.beginPath();
-        c.moveTo(12 * pulse, 0);
-        c.lineTo(-6 * pulse, -10 * pulse);
-        c.lineTo(-6 * pulse, 10 * pulse);
-        c.closePath();
-        c.fill();
-        
-        // Draw boss text label
-        c.rotate(-angle); // un-rotate text so it sits upright
-        c.font = "bold 9px Inter, sans-serif";
-        c.fillStyle = "#ff3a5e";
-        c.textAlign = "center";
-        c.strokeStyle = "rgba(0,0,0,0.7)";
-        c.lineWidth = 2.5;
-        c.strokeText("BOSS", 0, 18);
-        c.fillText("BOSS", 0, 18);
-        c.restore();
-      }
+      const bc = G.boss.color || "#ff3a5e";
+      if (markerVisible(G.boss, p, z)) drawTargetLock(c, t, G.boss, p, z, bc, G.boss.name || "BOSS");
+      else drawEdgeMarker(c, t, G.boss, p, z, bc, G.boss.name || "BOSS", true);
     }
-    
-    // 1.5. Offscreen Universe Core pointer
-    if (G.victoryCore) {
-      const sx = (G.victoryCore.x - p.x) * z + W / 2;
-      const sy = (G.victoryCore.y - p.y) * z + H / 2;
-      if (sx < 0 || sx > W || sy < 0 || sy > H) {
-        const angle = Math.atan2(sy - H / 2, sx - W / 2);
-        const px = clamp(sx, margin, W - margin);
-        const py = clamp(sy, margin, H - margin);
-        
-        c.save();
-        c.translate(px, py);
-        c.rotate(angle);
-        
-        const pulse = 1 + 0.2 * Math.sin(t * 12);
-        c.fillStyle = "#00f5d4";
-        c.beginPath();
-        c.moveTo(14 * pulse, 0);
-        c.lineTo(-7 * pulse, -11 * pulse);
-        c.lineTo(-7 * pulse, 11 * pulse);
-        c.closePath();
-        c.fill();
-        
-        c.rotate(-angle);
-        c.font = "bold 9px Inter, sans-serif";
-        c.fillStyle = "#00f5d4";
-        c.textAlign = "center";
-        c.strokeStyle = "rgba(0,0,0,0.7)";
-        c.lineWidth = 2.5;
-        c.strokeText("CORE", 0, 18);
-        c.fillText("CORE", 0, 18);
-        c.restore();
-      }
+
+    // 1.5. Universe Core tracker
+    if (G.victoryCore && !markerVisible(G.victoryCore, p, z)) {
+      drawEdgeMarker(c, t, G.victoryCore, p, z, "#00f5d4", "UNIVERSE CORE", false);
     }
-    
+
+
     // 2. Offscreen Shooters pointers
     let shooterCount = 0;
     for (const o of G.objs) {
